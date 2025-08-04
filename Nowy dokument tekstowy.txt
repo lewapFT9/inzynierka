@@ -1,0 +1,32 @@
+GOOGLE API:
+AIzaSyDo_Al--8XiGUKaBroWjJJIAnGAz_sym-4
+
+WYSZUKIWARKA GOOGLE:
+<script async src="https://cse.google.com/cse.js?cx=66d53b02f24504c1a">
+</script>
+<div class="gcse-search"></div>
+
+id wyszukiwarki google:
+66d53b02f24504c1a
+
+
+Co musi zawierać MVP?
+Wczytanie klas obrazów i haseł z GUI
+
+Pobieranie obrazów z jednej wyszukiwarki (np. Bing)
+
+Zapis obrazów do jednej klasy do folderu train/klasa_x/
+
+Sprawdzenie, czy obraz da się otworzyć
+
+GUI z prostym paskiem postępu
+
+
+unsplash api key:
+peQxbaORDGVkZuY1fz8ijcxpXk62ar7Adbq60gyOBcY
+
+pixabay:
+Your API key: 51001327-5b6c6e65af9123ccdc685d51a
+
+pexels:
+0ZGqWFS4MyMODGYPkIaVDgjjrVL6rjYvUZER5MS2TGjj8Oger4kC2M9h
