@@ -41,8 +41,23 @@ def download_images_wikimedia(query, count, save_dir, progress_callback=None, st
             try:
                 img_url = item["imageinfo"][0]["url"]
                 print(f"[Wikimedia] Pobieram: {img_url}")
-                img_data = requests.get(img_url, timeout=10).content
-                img = Image.open(BytesIO(img_data))
+
+                if img_url.lower().endswith('.svg'):
+                    print(f"[Wikimedia] Pominięto plik SVG: {img_url}")
+                    continue
+
+                response = requests.get(img_url, timeout=10)
+                content_type = response.headers.get('Content-Type', '')
+
+                if "image" not in content_type:
+                    print(f"[Wikimedia] Pominięto – nieobrazowy content-type: {content_type}")
+                    continue
+
+                try:
+                    img = Image.open(BytesIO(response.content))
+                except Exception as e:
+                    print(f"[Wikimedia] Błąd przy otwieraniu obrazu: {e}")
+                    continue
 
                 if is_valid_image(img):
                     filename = os.path.join(save_dir, f"{downloaded + 1 + start_index}.jpg")
