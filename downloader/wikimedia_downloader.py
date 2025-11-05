@@ -3,6 +3,8 @@ import requests
 from PIL import Image
 from io import BytesIO
 from validator.image_validator import is_valid_image
+from exceptions.exceptions import RateLimitException
+
 
 def download_images_wikimedia(query, count, save_dir, progress_callback=None, start_index=0):
     os.makedirs(save_dir, exist_ok=True)
@@ -26,7 +28,9 @@ def download_images_wikimedia(query, count, save_dir, progress_callback=None, st
 
         response = requests.get("https://commons.wikimedia.org/w/api.php", params=params)
 
-        if response.status_code != 200:
+        if response.status_code == 429:
+            raise RateLimitException("Wikimedia API limit exceeded")
+        elif response.status_code != 200:
             print(f"[Wikimedia] Błąd HTTP: {response.status_code}")
             break
 

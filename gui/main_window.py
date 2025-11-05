@@ -15,6 +15,8 @@ from gui.cleaner_window import CleanerWindow
 from splitter.splitter import split_images
 from resizer.image_resizer import apply_resize_to_folder
 from gui.source_selector import SourceSelector
+from exceptions.exceptions import RateLimitException
+
 
 
 class ImageDownloaderGUI:
@@ -22,6 +24,7 @@ class ImageDownloaderGUI:
     def __init__(self, master):
         self.master = master
         master.title("INŻYNIERKA")
+        self.source_selector_window = None  # <--- DODANE
         self.build_ui()
 
     def build_ui(self):
@@ -106,15 +109,41 @@ class ImageDownloaderGUI:
         self.folder = folder
         self.count = count
 
+        self.download_button.config(state="disabled")
+
         self.available_sources = ["google", "pexels", "pixabay", "unsplash", "openverse", "wikimedia"]
 
         def on_source(selected_source):
+            # po wybraniu źródła zapominamy o oknie i startujemy pobieranie
+            self.source_selector_window = None
             threading.Thread(target=self.run_download, args=(selected_source,)).start()
 
-        # pokaż okno wyboru źródła
-        SourceSelector(self.master, self.available_sources, on_source)
+        def on_cancel_source():
+            # użytkownik zamknął okno wyboru – odblokowujemy przycisk
+            self.source_selector_window = None
+            self.download_button.config(state="normal")
+
+            # jeśli okno już istnieje – tylko je wyciągamy na wierzch
+
+        if self.source_selector_window is not None and self.source_selector_window.winfo_exists():
+            self.source_selector_window.lift()
+            self.source_selector_window.focus_force()
+            return
+
+            # tworzymy nowe okno wyboru i zapamiętujemy referencję
+        self.source_selector_window = SourceSelector(
+            self.master,
+            self.available_sources,
+            on_select=on_source,
+            on_cancel=on_cancel_source
+        )
+
+    from exceptions.exceptions import RateLimitException
 
     def run_download(self, source):
+        threading.Thread(target=self._download_thread, args=(source,)).start()
+
+    def _download_thread(self, source):
         query = self.query
         class_name = self.class_name
         folder = self.folder
@@ -124,36 +153,64 @@ class ImageDownloaderGUI:
         os.makedirs(tmp_dir, exist_ok=True)
         self.tmp_dir = tmp_dir
 
-        # tutaj pobieranie z wybranego źródła
-        downloaded = self.download_from_source(source, query, int(count), tmp_dir)
+        try:
+            current_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+            current_count = len(current_files)
+            missing = int(count) - current_count
+            print(f"[{source}] Pobieram brakujące {missing} z {count} obrazów (już jest {current_count})")
 
-        self.prompt_next_action(tmp_dir, query, int(count), source)
+            downloaded = self.download_from_source(source, query, missing, tmp_dir)
+            print(f"[{source.upper()}] ZAKOŃCZONO – pobrano: {downloaded}, oczekiwane: {missing}")
 
-    def download_from_source(self, source, query, count, save_dir):
+            self.master.after(0, lambda: self.prompt_next_action(tmp_dir, query, int(count), source))
+
+        except RateLimitException:
+            print(f"[{source}] Przekroczony limit lub błąd — pytam o nowe źródło")
+
+            self.master.after(0, lambda: messagebox.showwarning(
+                "Limit zapytań",
+                f"Źródło {source.capitalize()} przekroczyło limit zapytań. Wybierz kolejne źródło."
+            ))
+            self.available_sources = [s for s in self.available_sources if s != source]
+
+            if not self.available_sources:
+                self.master.after(0, lambda: (
+                    messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane."),
+                    self.download_button.config(state="normal")  # <-- TU
+                ))
+                return
+
+            self.master.after(0, lambda: SourceSelector(
+                self.master,
+                self.available_sources,
+                lambda new_source: self.run_download_with_resume(new_source, tmp_dir, query, int(count), current_count)
+            ))
+
+    def download_from_source(self, source, query, missing, save_dir):
         if source == "google":
             from downloader.google_downloader import download_images_google
-            return download_images_google(query, count, save_dir, self.update_progress)
+            return download_images_google(query, missing, save_dir, self.update_progress)
         elif source == "openverse":
             from downloader.openverse_downloader import download_images_openverse
-            return download_images_openverse(query, count, save_dir, self.update_progress)
+            return download_images_openverse(query, missing, save_dir, self.update_progress)
         elif source == "pexels":
             from downloader.pexels_downloader import download_images_pexels
-            return download_images_pexels(query, count, save_dir, self.update_progress)
+            return download_images_pexels(query, missing, save_dir, self.update_progress)
         elif source == "pixabay":
             from downloader.pixabay_downloader import download_images_pixabay
-            return download_images_pixabay(query, count, save_dir, self.update_progress)
+            return download_images_pixabay(query, missing, save_dir, self.update_progress)
         elif source == "unsplash":
             from downloader.unsplash_downloader import download_images_unsplash
-            return download_images_unsplash(query, count, save_dir, self.update_progress)
+            return download_images_unsplash(query, missing, save_dir, self.update_progress)
         elif source == "wikimedia":
             from downloader.wikimedia_downloader import download_images_wikimedia
-            return download_images_wikimedia(query, count, save_dir, self.update_progress)
+            return download_images_wikimedia(query, missing , save_dir, self.update_progress)
         else:
             print(f"Nieznane źródło: {source}")
             return 0
 
 
-    def dispatch_download(self, source, query, count, tmp_dir, progress_callback=None, start_index=0):
+    def dispatch_download(self, source, query, missing, tmp_dir, progress_callback=None, start_index=0):
         func = {
             "google": download_images_google,
             "pexels": download_images_pexels,
@@ -167,7 +224,7 @@ class ImageDownloaderGUI:
             print(f"Nieznane źródło: {source}")
             return 0
         start_index = utils.get_next_image_index(tmp_dir)
-        return func(query, count, tmp_dir, progress_callback, start_index)
+        return func(query, missing, tmp_dir, progress_callback, start_index)
 
 
     def prompt_next_action(self, tmp_dir, query, expected_count, source):
@@ -191,7 +248,7 @@ class ImageDownloaderGUI:
                 self.run_download_with_resume(new_source, tmp_dir, query, expected_count, current_count)
 
             # Usuń obecne źródło z listy
-            self.available_sources = [s for s in self.available_sources if s != source]
+            #self.available_sources = [s for s in self.available_sources if s != source]
 
             if not self.available_sources:
                 messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane.")
@@ -205,26 +262,86 @@ class ImageDownloaderGUI:
             self.prompt_next_action(tmp_dir, query, expected_count, source)
 
     def run_download_with_resume(self, source, tmp_dir, query, expected_count, current_count):
+        threading.Thread(target=self._resume_download_thread,
+                         args=(source, tmp_dir, query, expected_count, current_count)).start()
+
+    def _resume_download_thread(self, source, tmp_dir, query, expected_count, _current_count_ignored):
         print(f"Kontynuuję pobieranie z nowego źródła: {source}")
+
+        current_files = [
+            f for f in os.listdir(tmp_dir)
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        ]
+        current_count = len(current_files)
         missing = expected_count - current_count
 
-        downloaded = self.dispatch_download(source, query, missing, tmp_dir, self.update_progress,
-                                            start_index=current_count)
+        print(f"[{source}] RESUME: expected={expected_count}, current={current_count}, missing={missing}")
 
-        if current_count + downloaded < expected_count:
-            # Znów brakuje — ponownie pokaż wybór źródła
+        if missing <= 0:
+            print(f"[{source}] RESUME: nic nie brakuje, pomijam dodatkowe pobieranie.")
+            self.master.after(0, lambda: self.prompt_next_action(tmp_dir, query, expected_count, source))
+            return
+
+        try:
+            downloaded = self.dispatch_download(
+                source,
+                query,
+                missing,
+                tmp_dir,
+                self.update_progress,
+                start_index=utils.get_next_image_index(tmp_dir)
+            )
+            print(f"[{source.upper()} - RESUME] ZAKOŃCZONO – pobrano: {downloaded}, brakowało: {missing}")
+        except RateLimitException:
+            print(f"[{source}] Przekroczony limit lub błąd — pytam o nowe źródło")
+
+            self.master.after(0, lambda: messagebox.showwarning(
+                "Limit zapytań",
+                f"Źródło {source.capitalize()} przekroczyło limit zapytań. Wybierz kolejne źródło."
+            ))
             self.available_sources = [s for s in self.available_sources if s != source]
 
             if not self.available_sources:
-                messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane.")
-                self.prompt_next_action(tmp_dir, query, expected_count, source)
+                self.master.after(0, lambda: (
+                    messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane."),
+                    self.download_button.config(state="normal")
+                ))
                 return
 
-            SourceSelector(self.master, self.available_sources, lambda new_src:
-            self.run_download_with_resume(new_src, tmp_dir, query, expected_count, current_count + downloaded)
-                           )
+            self.master.after(0, lambda: SourceSelector(
+                self.master,
+                self.available_sources,
+                lambda new_src: self.run_download_with_resume(
+                    new_src, tmp_dir, query, expected_count, current_count
+                )
+            ))
+            return
+
+        new_count = len([
+            f for f in os.listdir(tmp_dir)
+            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+        ])
+        print(f"[{source}] RESUME: po pobraniu w folderze jest {new_count}/{expected_count}")
+
+        if new_count < expected_count:
+            self.available_sources = [s for s in self.available_sources if s != source]
+
+            if not self.available_sources:
+                self.master.after(0, lambda: messagebox.showwarning(
+                    "Brak źródeł",
+                    "Wszystkie źródła zostały wykorzystane."
+                ))
+                return
+
+            self.master.after(0, lambda: SourceSelector(
+                self.master,
+                self.available_sources,
+                lambda new_src: self.run_download_with_resume(
+                    new_src, tmp_dir, query, expected_count, new_count
+                )
+            ))
         else:
-            self.prompt_next_action(tmp_dir, query, expected_count, source)
+            self.master.after(0, lambda: self.prompt_next_action(tmp_dir, query, expected_count, source))
 
     def process_resize_and_split(self, tmp_dir):
         if self.resize_enabled.get():
@@ -234,6 +351,8 @@ class ImageDownloaderGUI:
                 print(f" Przeskalowano do {width}x{height}")
             except Exception as e:
                 messagebox.showerror("Błąd", f"Nie udało się przeskalować: {e}")
+                self.download_button.config(state="normal")
+
                 return
 
         folder = self.folder_path.get()
@@ -251,8 +370,11 @@ class ImageDownloaderGUI:
 
         if not subsets:
             messagebox.showerror("Błąd", "Wybierz co najmniej jeden podzbiór.")
+            self.download_button.config(state="normal")
             return
 
         split_images(tmp_dir, save_dir, (train_ratio, valid_ratio, test_ratio), subsets)
         shutil.rmtree(tmp_dir)
         messagebox.showinfo("Zakończono", f"Dane zapisano w: {save_dir}")
+        self.download_button.config(state="normal")
+

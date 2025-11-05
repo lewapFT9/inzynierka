@@ -3,6 +3,8 @@ import requests
 from PIL import Image
 from io import BytesIO
 from validator.image_validator import is_valid_image
+from exceptions.exceptions import RateLimitException
+
 
 def download_images_openverse(query, count, save_dir, progress_callback=None, start_index=0):
     os.makedirs(save_dir, exist_ok=True)
@@ -11,20 +13,25 @@ def download_images_openverse(query, count, save_dir, progress_callback=None, st
 
     print(f"[Openverse] Start pobierania ({count} obrazów) dla zapytania: '{query}'")
 
+    headers = {
+        "Accept": "application/json"
+    }
+
     while downloaded < count:
         params = {
             "q": query,
-            "license": "cc_by",
-            "source": "all",
             "page_size": min(20, count - downloaded),
             "page": page
         }
 
-        response = requests.get("https://api.openverse.engineering/v1/images", params=params)
+        response = requests.get("https://api.openverse.engineering/v1/images", params=params, headers=headers)
 
-        if response.status_code != 200:
+        if response.status_code == 429:
+            raise RateLimitException("Openverse API limit exceeded")
+        elif response.status_code != 200:
             print(f"[Openverse] Błąd HTTP: {response.status_code}")
-            break
+            print(f"[Openverse] Treść odpowiedzi: {response.text}")
+            raise RateLimitException("Openverse API returned an error.")
 
         data = response.json()
         results = data.get("results", [])

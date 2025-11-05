@@ -4,6 +4,8 @@ from PIL import Image
 from io import BytesIO
 from validator.image_validator import is_valid_image
 from downloader.unsplash_config import UNSPLASH_ACCESS_KEY
+from exceptions.exceptions import RateLimitException
+
 
 def download_images_unsplash(query, count, save_dir, progress_callback=None, start_index=0):
     os.makedirs(save_dir, exist_ok=True)
@@ -23,6 +25,8 @@ def download_images_unsplash(query, count, save_dir, progress_callback=None, sta
 
         print(f"[Unsplash] Zapytanie: page={page}, per_page={params['per_page']}")
         response = requests.get("https://api.unsplash.com/search/photos", params=params)
+        if response.status_code == 403 and "Rate Limit Exceeded" in response.text:
+            raise RateLimitException("Unsplash API limit exceeded")
 
         if response.status_code != 200:
             print(f"[Unsplash] Błąd HTTP: {response.status_code}")
