@@ -24,6 +24,9 @@ def apply_resize_to_folder(folder, size, method='resize'):
                     img = resize_image(img, size)
                 elif method == 'crop':
                     img = center_crop(img, size)
-                img.save(path)
+                ext = os.path.splitext(path)[1]  # np ".png"
+                fmt = ext.replace(".", "").upper()  # "PNG"
+
+                img.save(path, format=fmt)
             except Exception as e:
                 print(f" Błąd skalowania obrazu {filename}: {e}")

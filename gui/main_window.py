@@ -73,6 +73,17 @@ class ImageDownloaderGUI:
         self.resolution_entry.insert(0, "224x224")
         self.resolution_entry.pack()
 
+        tk.Label(self.master, text="Format zapisu:").pack()
+        self.output_format_var = tk.StringVar(value="jpg")
+
+        ttk.Combobox(
+            self.master,
+            textvariable=self.output_format_var,
+            values=["jpg", "png", "jpeg"],
+            state="readonly",
+            width=10
+        ).pack()
+
         self.progress = tk.IntVar()
         self.progress_bar = ttk.Progressbar(self.master, orient="horizontal", length=300, mode="determinate")
         self.progress_bar.pack(pady=10)
@@ -186,22 +197,32 @@ class ImageDownloaderGUI:
                 lambda new_source: self.run_download_with_resume(new_source, tmp_dir, query, int(count), current_count)
             ))
 
+    def get_target_size_if_crop(self):
+        if self.method_var.get() == "crop":
+            try:
+                w, h = map(int, self.resolution_entry.get().lower().strip().split("x"))
+                return (w, h)
+            except:
+                return None
+        return None
+
     def download_from_source(self, source, query, missing, save_dir):
+        fmt = self.output_format_var.get()
         if source == "google":
             from downloader.google_downloader import download_images_google
-            return download_images_google(query, missing, save_dir, self.update_progress)
+            return download_images_google(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
         elif source == "openverse":
             from downloader.openverse_downloader import download_images_openverse
-            return download_images_openverse(query, missing, save_dir, self.update_progress)
+            return download_images_openverse(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
         elif source == "pexels":
             from downloader.pexels_downloader import download_images_pexels
-            return download_images_pexels(query, missing, save_dir, self.update_progress)
+            return download_images_pexels(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
         elif source == "pixabay":
             from downloader.pixabay_downloader import download_images_pixabay
-            return download_images_pixabay(query, missing, save_dir, self.update_progress)
+            return download_images_pixabay(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
         elif source == "unsplash":
             from downloader.unsplash_downloader import download_images_unsplash
-            return download_images_unsplash(query, missing, save_dir, self.update_progress)
+            return download_images_unsplash(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
         elif source == "wikimedia":
             from downloader.wikimedia_downloader import download_images_wikimedia
             return download_images_wikimedia(query, missing , save_dir, self.update_progress)
@@ -219,12 +240,12 @@ class ImageDownloaderGUI:
             "openverse": download_images_openverse,
             "wikimedia": download_images_wikimedia
         }.get(source)
-
+        fmt = self.output_format_var.get()
         if not func:
             print(f"Nieznane źródło: {source}")
             return 0
         start_index = utils.get_next_image_index(tmp_dir)
-        return func(query, missing, tmp_dir, progress_callback, start_index)
+        return func(query, missing, tmp_dir, progress_callback, start_index, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
 
 
     def prompt_next_action(self, tmp_dir, query, expected_count, source):
@@ -289,7 +310,7 @@ class ImageDownloaderGUI:
                 missing,
                 tmp_dir,
                 self.update_progress,
-                start_index=utils.get_next_image_index(tmp_dir)
+                start_index=utils.get_next_image_index(tmp_dir),
             )
             print(f"[{source.upper()} - RESUME] ZAKOŃCZONO – pobrano: {downloaded}, brakowało: {missing}")
         except RateLimitException:

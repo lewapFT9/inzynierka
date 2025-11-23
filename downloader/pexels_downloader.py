@@ -6,19 +6,21 @@ from validator.image_validator import is_valid_image
 from downloader.pexels_config import PEXELS_API_KEY
 from exceptions.exceptions import RateLimitException
 
-
-def download_images_pexels(query, count, save_dir, progress_callback=None, start_index=0):
+def download_images_pexels(
+    query, count, save_dir,
+    progress_callback=None,
+    start_index=0,
+    method="resize",
+    min_size=None,
+    output_format="jpg"
+):
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
     page = 1 + start_index // 15
     error_count = 0
-    max_errors = 10  # limit błędów
+    max_errors = 10
 
-    headers = {
-        "Authorization": PEXELS_API_KEY
-    }
-
-    print(f"[Pexels] Start pobierania ({count} obrazów) dla zapytania: '{query}'")
+    headers = {"Authorization": PEXELS_API_KEY}
 
     while downloaded < count:
         params = {
@@ -27,18 +29,16 @@ def download_images_pexels(query, count, save_dir, progress_callback=None, start
             "page": page
         }
 
-        response = requests.get("https://api.pexels.com/v1/search", headers=headers, params=params)
+        response = requests.get("https://api.pexels.com/v1/search",
+                                headers=headers, params=params)
 
         if response.status_code == 429:
             raise RateLimitException("Pexels API limit exceeded")
-        elif response.status_code != 200:
-            print(f"[Pexels] Błąd HTTP: {response.status_code}")
-            print(f"[Pexels] Treść odpowiedzi: {response.text}")
+
+        if response.status_code != 200:
             raise RateLimitException("Pexels API returned an error.")
 
-        data = response.json()
-        photos = data.get("photos", [])
-        print(f"[Pexels] Otrzymano {len(photos)} wyników.")
+        photos = response.json().get("photos", [])
 
         if not photos:
             break
@@ -46,26 +46,27 @@ def download_images_pexels(query, count, save_dir, progress_callback=None, start
         for item in photos:
             try:
                 img_url = item["src"]["large"]
-                print(f"[Pexels] Pobieram: {img_url}")
                 img_data = requests.get(img_url, timeout=10).content
                 img = Image.open(BytesIO(img_data))
 
+                # size check
+                if method == "crop" and min_size is not None:
+                    min_w, min_h = min_size
+                    if img.width < min_w or img.height < min_h:
+                        print("[Pexels] Pominięto – za małe.")
+                        continue
+
                 if is_valid_image(img):
-                    filename = os.path.join(save_dir, f"{downloaded + 1 + start_index}.jpg")
-                    img.convert("RGB").save(filename)
+                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{output_format}")
+                    img = img.convert("RGB") if output_format in ["jpg", "jpeg"] else img  # JPG musi być RGB
+                    img.save(filename, format=output_format.upper())
                     downloaded += 1
-                    print(f"[Pexels] Zapisano: {filename}")
                     if progress_callback:
                         progress_callback(downloaded + start_index, count + start_index)
-                else:
-                    print("[Pexels] Odrzucony przez walidator.")
-
-            except Exception as e:
-                print(f"[Pexels] Błąd przy pobieraniu obrazu: {e}")
+            except Exception:
                 error_count += 1
                 if error_count >= max_errors:
-                    print("[Pexels] Zbyt wiele błędów – przerywam.")
-                    raise RateLimitException("Pexels: zbyt wiele błędów podczas pobierania.")
+                    raise RateLimitException("Pexels: Too many errors")
                 continue
 
             if downloaded >= count:
@@ -73,5 +74,4 @@ def download_images_pexels(query, count, save_dir, progress_callback=None, start
 
         page += 1
 
-    print(f"[Pexels] Zakończono. Łącznie pobrano {downloaded}/{count} obrazów z Pexels.")
     return downloaded

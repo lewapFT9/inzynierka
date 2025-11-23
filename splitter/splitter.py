@@ -23,6 +23,7 @@ def split_images(source_dir, dest_dir, subset_ratio, subsets):
             if i >= len(images):
                 break
             src = os.path.join(source_dir, images[i])
-            dst = os.path.join(subset_dir, f"{i+1}.jpg")
+            ext = os.path.splitext(src)[1]  # zachowaj rozszerzenie
+            dst = os.path.join(subset_dir, f"{i + 1}{ext}")
             shutil.copy2(src, dst)
             i += 1

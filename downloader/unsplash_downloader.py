@@ -6,14 +6,17 @@ from validator.image_validator import is_valid_image
 from downloader.unsplash_config import UNSPLASH_ACCESS_KEY
 from exceptions.exceptions import RateLimitException
 
-
-def download_images_unsplash(query, count, save_dir, progress_callback=None, start_index=0):
+def download_images_unsplash(
+    query, count, save_dir,
+    progress_callback=None,
+    start_index=0,
+    method="resize",
+    min_size=None,
+    output_format="jpg"
+):
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
     page = 1
-
-    print(f"[Unsplash] Start pobierania ({count} obrazów) dla zapytania: '{query}'")
-    print(f"[Unsplash] Używany klucz API: {'OK' if UNSPLASH_ACCESS_KEY else 'BRAK!'}")
 
     while downloaded < count:
         params = {
@@ -23,42 +26,40 @@ def download_images_unsplash(query, count, save_dir, progress_callback=None, sta
             "per_page": min(10, count - downloaded)
         }
 
-        print(f"[Unsplash] Zapytanie: page={page}, per_page={params['per_page']}")
-        response = requests.get("https://api.unsplash.com/search/photos", params=params)
+        response = requests.get("https://api.unsplash.com/search/photos",
+                                params=params)
         if response.status_code == 403 and "Rate Limit Exceeded" in response.text:
             raise RateLimitException("Unsplash API limit exceeded")
 
         if response.status_code != 200:
-            print(f"[Unsplash] Błąd HTTP: {response.status_code}")
-            print(f"[Unsplash] Treść odpowiedzi: {response.text}")
-            break
+            raise RateLimitException("Unsplash API returned an error")
 
-        data = response.json()
-        results = data.get("results", [])
-        print(f"[Unsplash] Otrzymano {len(results)} wyników.")
+        results = response.json().get("results", [])
 
         if not results:
-            print("[Unsplash] Brak wyników — kończę.")
             break
 
         for item in results:
             try:
                 img_url = item["urls"]["regular"]
-                print(f"[Unsplash] Próbuję pobrać: {img_url}")
                 img_data = requests.get(img_url, timeout=10).content
                 img = Image.open(BytesIO(img_data))
 
+                # size check
+                if method == "crop" and min_size is not None:
+                    min_w, min_h = min_size
+                    if img.width < min_w or img.height < min_h:
+                        print("[Unsplash] Too small – skipped.")
+                        continue
+
                 if is_valid_image(img):
-                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.jpg")
-                    img.convert("RGB").save(filename)
+                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{output_format}")
+                    img = img.convert("RGB") if output_format in ["jpg", "jpeg"] else img  # JPG musi być RGB
+                    img.save(filename, format=output_format.upper())
                     downloaded += 1
-                    print(f"[Unsplash] Zapisano: {filename}")
                     if progress_callback:
-                        progress_callback(downloaded + start_index , count + start_index )
-                else:
-                    print(f"[Unsplash] Obraz odrzucony przez walidację.")
-            except Exception as e:
-                print(f"[Unsplash] Błąd przy pobieraniu obrazu: {e}")
+                        progress_callback(downloaded + start_index, count + start_index)
+            except Exception:
                 continue
 
             if downloaded >= count:
@@ -66,5 +67,4 @@ def download_images_unsplash(query, count, save_dir, progress_callback=None, sta
 
         page += 1
 
-    print(f"[Unsplash] Zakończono. Łącznie pobrano {downloaded}/{count} obrazów z Unsplash.")
     return downloaded

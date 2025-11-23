@@ -6,7 +6,14 @@ from validator.image_validator import is_valid_image
 from downloader.google_config import API_KEY, CSE_ID
 from exceptions.exceptions import RateLimitException
 
-def download_images_google(query, count, save_dir, progress_callback=None, start_index=0):
+def download_images_google(
+    query, count, save_dir,
+    progress_callback=None,
+    start_index=0,
+    method="resize",
+    min_size=None,
+    output_format="jpg"
+):
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
     start = 1
@@ -25,23 +32,19 @@ def download_images_google(query, count, save_dir, progress_callback=None, start
         response = requests.get("https://www.googleapis.com/customsearch/v1", params=params)
 
         if response.status_code == 429:
-            print("[Google] Limit zapytań API został przekroczony (HTTP 429).")
-            raise RateLimitException("Google API rate limit exceeded.")
+            raise RateLimitException("Google API limit exceeded.")
 
         try:
             response.raise_for_status()
             data = response.json()
 
             if "error" in data and "quota" in data["error"].get("message", "").lower():
-                print("[Google] Limit zapytań API został przekroczony (message).")
                 raise RateLimitException("Google API quota exceeded.")
 
-        except requests.exceptions.HTTPError as e:
-            print(f"[Google] Błąd HTTP: {e}")
+        except requests.exceptions.HTTPError:
             raise RateLimitException("Google API HTTPError")
 
         if "items" not in data:
-            print("[Google] Brak wyników – możliwe wyczerpanie limitu.")
             raise RateLimitException("Google API returned no items")
 
         for item in data["items"]:
@@ -50,9 +53,17 @@ def download_images_google(query, count, save_dir, progress_callback=None, start
                 img_data = requests.get(img_url, timeout=10).content
                 img = Image.open(BytesIO(img_data))
 
+                # --- MINIMAL SIZE CHECK FOR CROP ---
+                if method == "crop" and min_size is not None:
+                    min_w, min_h = min_size
+                    if img.width < min_w or img.height < min_h:
+                        print("[Google] Pominięto – za małe do crop.")
+                        continue
+
                 if is_valid_image(img):
-                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.jpg")
-                    img.convert("RGB").save(filename)
+                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{output_format}")
+                    img = img.convert("RGB") if output_format in ["jpg", "jpeg"] else img  # JPG musi być RGB
+                    img.save(filename, format=output_format.upper())
                     downloaded += 1
                     if progress_callback:
                         progress_callback(downloaded + start_index, count + start_index)
@@ -64,8 +75,6 @@ def download_images_google(query, count, save_dir, progress_callback=None, start
 
         start += 10
         if start > 91:
-            print("[Google] Osiągnięto maksymalny zakres start (91).")
             raise RateLimitException("Google API pagination limit reached")
 
-    print(f"[Google] Ukończono pobieranie: {downloaded}/{count} obrazów.")
     return downloaded
