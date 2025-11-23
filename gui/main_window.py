@@ -73,22 +73,80 @@ class ImageDownloaderGUI:
         self.resolution_entry.insert(0, "224x224")
         self.resolution_entry.pack()
 
-        tk.Label(self.master, text="Format zapisu:").pack()
-        self.output_format_var = tk.StringVar(value="jpg")
+        tk.Label(self.master, text="Dozwolone formaty wejściowe:").pack(pady=(10, 0))
 
-        ttk.Combobox(
+        self.allow_all_formats = tk.BooleanVar(value=True)
+        self.allow_jpg = tk.BooleanVar(value=True)
+        self.allow_png = tk.BooleanVar(value=True)
+        self.allow_gif = tk.BooleanVar(value=True)
+
+        self.jpg_cb = tk.Checkbutton(
             self.master,
-            textvariable=self.output_format_var,
-            values=["jpg", "png", "jpeg"],
-            state="readonly",
-            width=10
-        ).pack()
+            text="JPG / JPEG",
+            variable=self.allow_jpg,
+            command=self.update_format_checkboxes
+        )
+        self.jpg_cb.pack(anchor="w")
+
+        self.png_cb = tk.Checkbutton(
+            self.master,
+            text="PNG",
+            variable=self.allow_png,
+            command=self.update_format_checkboxes
+        )
+        self.png_cb.pack(anchor="w")
+
+        self.gif_cb = tk.Checkbutton(
+            self.master,
+            text="GIF",
+            variable=self.allow_gif,
+            command=self.update_format_checkboxes
+        )
+        self.gif_cb.pack(anchor="w")
+
+        self.all_cb = tk.Checkbutton(
+            self.master,
+            text="Wszystkie formaty dozwolone",
+            variable=self.allow_all_formats,
+            command=self.update_format_checkboxes
+        )
+        self.all_cb.pack(anchor="w")
+
+        # Ustaw stan początkowy
+        self.update_format_checkboxes()
 
         self.progress = tk.IntVar()
         self.progress_bar = ttk.Progressbar(self.master, orient="horizontal", length=300, mode="determinate")
         self.progress_bar.pack(pady=10)
         self.download_button = ttk.Button(self.master, text="Pobierz obrazy", command=self.start_download)
         self.download_button.pack(pady=10)
+
+    def update_format_checkboxes(self):
+        if self.allow_all_formats.get():
+            self.allow_jpg.set(True)
+            self.allow_png.set(True)
+            self.allow_gif.set(True)
+            self.jpg_cb.config(state="disabled")
+            self.png_cb.config(state="disabled")
+            self.gif_cb.config(state="disabled")
+        else:
+            self.jpg_cb.config(state="normal")
+            self.png_cb.config(state="normal")
+            self.gif_cb.config(state="normal")
+
+    def get_allowed_input_formats(self):
+        if self.allow_all_formats.get():
+            return ["jpg", "jpeg", "png", "gif"]
+
+        allowed = []
+        if self.allow_jpg.get():
+            allowed += ["jpg", "jpeg"]
+        if self.allow_png.get():
+            allowed.append("png")
+        if self.allow_gif.get():
+            allowed.append("gif")
+
+        return allowed
 
 
     def choose_folder(self):
@@ -165,7 +223,7 @@ class ImageDownloaderGUI:
         self.tmp_dir = tmp_dir
 
         try:
-            current_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+            current_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))]
             current_count = len(current_files)
             missing = int(count) - current_count
             print(f"[{source}] Pobieram brakujące {missing} z {count} obrazów (już jest {current_count})")
@@ -207,29 +265,61 @@ class ImageDownloaderGUI:
         return None
 
     def download_from_source(self, source, query, missing, save_dir):
-        fmt = self.output_format_var.get()
+        allowed_formats = self.get_allowed_input_formats()
+
         if source == "google":
             from downloader.google_downloader import download_images_google
-            return download_images_google(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
+            return download_images_google(
+                query, missing, save_dir, self.update_progress,
+                min_size=self.get_target_size_if_crop(),
+                method=self.method_var.get(),
+                allowed_formats=allowed_formats
+            )
+
         elif source == "openverse":
             from downloader.openverse_downloader import download_images_openverse
-            return download_images_openverse(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
+            return download_images_openverse(
+                query, missing, save_dir, self.update_progress,
+                min_size=self.get_target_size_if_crop(),
+                method=self.method_var.get(),
+                allowed_formats=allowed_formats
+            )
+
         elif source == "pexels":
             from downloader.pexels_downloader import download_images_pexels
-            return download_images_pexels(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
+            return download_images_pexels(
+                query, missing, save_dir, self.update_progress,
+                min_size=self.get_target_size_if_crop(),
+                method=self.method_var.get(),
+                allowed_formats=allowed_formats
+            )
+
         elif source == "pixabay":
             from downloader.pixabay_downloader import download_images_pixabay
-            return download_images_pixabay(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
+            return download_images_pixabay(
+                query, missing, save_dir, self.update_progress,
+                min_size=self.get_target_size_if_crop(),
+                method=self.method_var.get(),
+                allowed_formats=allowed_formats
+            )
+
         elif source == "unsplash":
             from downloader.unsplash_downloader import download_images_unsplash
-            return download_images_unsplash(query, missing, save_dir, self.update_progress, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
+            return download_images_unsplash(
+                query, missing, save_dir, self.update_progress,
+                min_size=self.get_target_size_if_crop(),
+                method=self.method_var.get(),
+                allowed_formats=allowed_formats
+            )
+
         elif source == "wikimedia":
             from downloader.wikimedia_downloader import download_images_wikimedia
-            return download_images_wikimedia(query, missing , save_dir, self.update_progress)
-        else:
-            print(f"Nieznane źródło: {source}")
-            return 0
+            return download_images_wikimedia(
+                query, missing, save_dir, self.update_progress
+            )
 
+        print(f"Nieznane źródło: {source}")
+        return 0
 
     def dispatch_download(self, source, query, missing, tmp_dir, progress_callback=None, start_index=0):
         func = {
@@ -240,12 +330,11 @@ class ImageDownloaderGUI:
             "openverse": download_images_openverse,
             "wikimedia": download_images_wikimedia
         }.get(source)
-        fmt = self.output_format_var.get()
         if not func:
             print(f"Nieznane źródło: {source}")
             return 0
         start_index = utils.get_next_image_index(tmp_dir)
-        return func(query, missing, tmp_dir, progress_callback, start_index, min_size=self.get_target_size_if_crop(), method=self.method_var.get(), output_format=fmt)
+        return func(query, missing, tmp_dir, progress_callback, start_index, min_size=self.get_target_size_if_crop(), method=self.method_var.get())
 
 
     def prompt_next_action(self, tmp_dir, query, expected_count, source):
@@ -258,7 +347,7 @@ class ImageDownloaderGUI:
         self.master.after(0,ask)
 
     def check_and_continue(self, tmp_dir, query, expected_count, source):
-        current_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+        current_files = [f for f in os.listdir(tmp_dir) if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))]
         current_count = len(current_files)
 
         if current_count < expected_count:
@@ -291,7 +380,7 @@ class ImageDownloaderGUI:
 
         current_files = [
             f for f in os.listdir(tmp_dir)
-            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
         ]
         current_count = len(current_files)
         missing = expected_count - current_count
@@ -340,7 +429,7 @@ class ImageDownloaderGUI:
 
         new_count = len([
             f for f in os.listdir(tmp_dir)
-            if f.lower().endswith((".jpg", ".jpeg", ".png"))
+            if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
         ])
         print(f"[{source}] RESUME: po pobraniu w folderze jest {new_count}/{expected_count}")
 

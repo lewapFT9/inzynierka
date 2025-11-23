@@ -37,7 +37,7 @@ class CleanerWindow:
         for widget in self.scroll_frame.winfo_children():
             widget.destroy()
 
-        files = sorted([f for f in os.listdir(self.folder_path) if f.lower().endswith((".jpg", ".png", ".jpeg"))])
+        files = sorted([f for f in os.listdir(self.folder_path) if f.lower().endswith((".jpg", ".png", ".jpeg", ".gif"))])
         for idx, fname in enumerate(files):
             path = os.path.join(self.folder_path, fname)
             try:

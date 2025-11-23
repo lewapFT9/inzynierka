@@ -16,7 +16,7 @@ def center_crop(image, size):
 
 def apply_resize_to_folder(folder, size, method='resize'):
     for filename in os.listdir(folder):
-        if filename.lower().endswith((".jpg", ".jpeg", ".png")):
+        if filename.lower().endswith((".jpg", ".jpeg", ".png", ".gif")):
             path = os.path.join(folder, filename)
             try:
                 img = Image.open(path)

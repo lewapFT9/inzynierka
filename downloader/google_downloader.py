@@ -12,7 +12,7 @@ def download_images_google(
     start_index=0,
     method="resize",
     min_size=None,
-    output_format="jpg"
+    allowed_formats=None
 ):
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
@@ -53,6 +53,11 @@ def download_images_google(
                 img_data = requests.get(img_url, timeout=10).content
                 img = Image.open(BytesIO(img_data))
 
+                # sprawdzenie formatu wejściowego
+                img_format = (img.format or "").lower()
+                if allowed_formats and img_format not in allowed_formats:
+                    print(f"[Google] Pominięto – niedozwolony format: {img_format}")
+                    continue
                 # --- MINIMAL SIZE CHECK FOR CROP ---
                 if method == "crop" and min_size is not None:
                     min_w, min_h = min_size
@@ -61,9 +66,9 @@ def download_images_google(
                         continue
 
                 if is_valid_image(img):
-                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{output_format}")
-                    img = img.convert("RGB") if output_format in ["jpg", "jpeg"] else img  # JPG musi być RGB
-                    img.save(filename, format=output_format.upper())
+                    ext = (img.format or "jpg").lower()  # oryginalny typ z biblioteki Pillow
+                    filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{ext}")
+                    img.save(filename)
                     downloaded += 1
                     if progress_callback:
                         progress_callback(downloaded + start_index, count + start_index)
