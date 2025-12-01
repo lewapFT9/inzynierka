@@ -25,100 +25,171 @@ class ImageDownloaderGUI:
         self.master = master
         master.title("INŻYNIERKA")
         self.source_selector_window = None  # <--- DODANE
+
+        # --- SCROLLABLE MAIN FRAME ---
+        self.canvas = tk.Canvas(master)
+        self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
+        self.scrollable_frame = tk.Frame(self.canvas)
+
+        self.scrollable_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(
+                scrollregion=self.canvas.bbox("all")
+            )
+        )
+
+        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
+
         self.build_ui()
 
     def build_ui(self):
-        tk.Label(self.master, text="Hasło do wyszukiwania (query):").pack()
-        self.query_entry = tk.Entry(self.master, width=40)
+        f = self.scrollable_frame  # skrót do scrollowanego kontenera
+
+        tk.Label(f, text="Hasło do wyszukiwania (query):").pack()
+        self.query_entry = tk.Entry(f, width=40)
         self.query_entry.pack()
 
-        tk.Label(self.master, text="Liczba obrazów:").pack()
-        self.count_entry = tk.Entry(self.master, width=10)
+        tk.Label(f, text="Liczba obrazów:").pack()
+        self.count_entry = tk.Entry(f, width=10)
         self.count_entry.pack()
 
-        tk.Label(self.master, text="Nazwa klasy (folder):").pack()
-        self.class_entry = tk.Entry(self.master, width=20)
+        tk.Label(f, text="Nazwa klasy (folder):").pack()
+        self.class_entry = tk.Entry(f, width=20)
         self.class_entry.pack()
 
-        self.select_button = tk.Button(self.master, text="Wybierz folder docelowy", command=self.choose_folder)
+        self.select_button = tk.Button(f, text="Wybierz folder docelowy", command=self.choose_folder)
         self.select_button.pack(pady=5)
 
         self.folder_path = tk.StringVar()
-        tk.Label(self.master, textvariable=self.folder_path, fg="gray").pack()
+        tk.Label(f, textvariable=self.folder_path, fg="gray").pack()
 
-        tk.Label(self.master, text="Wybierz podzbiory:").pack()
+        tk.Label(f, text="Wybierz podzbiory:").pack()
         self.use_train = tk.BooleanVar(value=True)
         self.use_valid = tk.BooleanVar(value=True)
         self.use_test = tk.BooleanVar(value=True)
-        tk.Checkbutton(self.master, text="train", variable=self.use_train).pack()
-        tk.Checkbutton(self.master, text="valid", variable=self.use_valid).pack()
-        tk.Checkbutton(self.master, text="test", variable=self.use_test).pack()
+        tk.Checkbutton(f, text="train", variable=self.use_train).pack()
+        tk.Checkbutton(f, text="valid", variable=self.use_valid).pack()
+        tk.Checkbutton(f, text="test", variable=self.use_test).pack()
 
-        tk.Label(self.master, text="Podział zbioru (train / valid / test)").pack()
-        self.train_scale = tk.Scale(self.master, from_=10, to=90, orient=tk.HORIZONTAL, label="Train (%)")
-        self.valid_scale = tk.Scale(self.master, from_=0, to=90, orient=tk.HORIZONTAL, label="Valid (%)")
+        tk.Label(f, text="Podział zbioru (train / valid / test)").pack()
+        self.train_scale = tk.Scale(f, from_=10, to=90, orient=tk.HORIZONTAL, label="Train (%)")
+        self.valid_scale = tk.Scale(f, from_=0, to=90, orient=tk.HORIZONTAL, label="Valid (%)")
         self.train_scale.set(70)
         self.valid_scale.set(20)
         self.train_scale.pack()
         self.valid_scale.pack()
 
-        tk.Label(self.master, text="Zmiana rozdzielczości obrazów:").pack(pady=(10, 0))
+        # ----------------------------
+        # FILTR ROZDZIELCZOŚCI WEJŚCIOWEJ
+        # ----------------------------
+        tk.Label(f, text="Filtr rozdzielczości obrazów (WEJŚCIOWYCH):").pack(pady=(10, 0))
+
+        # --- MINIMUM ---
+        min_frame = tk.Frame(f)
+        min_frame.pack()
+
+        self.min_width_var = tk.StringVar(value="")
+        self.min_height_var = tk.StringVar(value="")
+        self.no_min_resolution = tk.BooleanVar(value=True)
+
+        tk.Checkbutton(
+            min_frame, text="Brak minimalnej", variable=self.no_min_resolution,
+            command=self.update_resolution_fields
+        ).grid(row=0, column=0, sticky="w")
+
+        tk.Label(min_frame, text="Min szerokość:").grid(row=1, column=0, sticky="e")
+
+        self.min_width_entry = tk.Entry(min_frame, textvariable=self.min_width_var, width=8)
+        self.min_width_entry.grid(row=1, column=1)
+
+        tk.Label(min_frame, text="Min wysokość:").grid(row=2, column=0, sticky="e")
+
+        self.min_height_entry = tk.Entry(min_frame, textvariable=self.min_height_var, width=8)
+        self.min_height_entry.grid(row=2, column=1)
+
+        # --- MAKSIMUM ---
+        max_frame = tk.Frame(f)
+        max_frame.pack(pady=(5, 0))
+
+        self.max_width_var = tk.StringVar(value="")
+        self.max_height_var = tk.StringVar(value="")
+        self.no_max_resolution = tk.BooleanVar(value=True)
+
+        tk.Checkbutton(
+            max_frame, text="Brak maksymalnej", variable=self.no_max_resolution,
+            command=self.update_resolution_fields
+        ).grid(row=0, column=0, sticky="w")
+
+        tk.Label(max_frame, text="Max szerokość:").grid(row=1, column=0, sticky="e")
+
+        self.max_width_entry = tk.Entry(max_frame, textvariable=self.max_width_var, width=8)
+        self.max_width_entry.grid(row=1, column=1)
+
+        tk.Label(max_frame, text="Max wysokość:").grid(row=2, column=0, sticky="e")
+
+        self.max_height_entry = tk.Entry(max_frame, textvariable=self.max_height_var, width=8)
+        self.max_height_entry.grid(row=2, column=1)
+
+        # ustawienie stanu pól (disable/enable)
+        self.update_resolution_fields()
+
+        # ----------------------------
+        # SCALING / CROP
+        # ----------------------------
+        tk.Label(f, text="Zmiana rozdzielczości obrazów:").pack(pady=(10, 0))
         self.resize_enabled = tk.BooleanVar(value=True)
-        tk.Checkbutton(self.master, text="Włącz skalowanie", variable=self.resize_enabled).pack()
+        tk.Checkbutton(f, text="Włącz skalowanie", variable=self.resize_enabled).pack()
+
         self.method_var = tk.StringVar(value="resize")
-        tk.Radiobutton(self.master, text="Zmień rozmiar", variable=self.method_var, value="resize").pack()
-        tk.Radiobutton(self.master, text="Wytnij środek", variable=self.method_var, value="crop").pack()
-        tk.Label(self.master, text="Szerokość x Wysokość (np. 224x224):").pack()
-        self.resolution_entry = tk.Entry(self.master)
+        tk.Radiobutton(f, text="Zmień rozmiar", variable=self.method_var, value="resize").pack()
+        tk.Radiobutton(f, text="Wytnij środek", variable=self.method_var, value="crop").pack()
+
+        tk.Label(f, text="Szerokość x Wysokość (np. 224x224):").pack()
+        self.resolution_entry = tk.Entry(f)
         self.resolution_entry.insert(0, "224x224")
         self.resolution_entry.pack()
 
-        tk.Label(self.master, text="Dozwolone formaty wejściowe:").pack(pady=(10, 0))
+        # ----------------------------
+        # FORMATY WEJŚCIOWE
+        # ----------------------------
+        tk.Label(f, text="Dozwolone formaty wejściowe:").pack(pady=(10, 0))
 
         self.allow_all_formats = tk.BooleanVar(value=True)
         self.allow_jpg = tk.BooleanVar(value=True)
         self.allow_png = tk.BooleanVar(value=True)
         self.allow_gif = tk.BooleanVar(value=True)
 
-        self.jpg_cb = tk.Checkbutton(
-            self.master,
-            text="JPG / JPEG",
-            variable=self.allow_jpg,
-            command=self.update_format_checkboxes
-        )
+        self.jpg_cb = tk.Checkbutton(f, text="JPG / JPEG", variable=self.allow_jpg,
+                                     command=self.update_format_checkboxes)
         self.jpg_cb.pack(anchor="w")
 
-        self.png_cb = tk.Checkbutton(
-            self.master,
-            text="PNG",
-            variable=self.allow_png,
-            command=self.update_format_checkboxes
-        )
+        self.png_cb = tk.Checkbutton(f, text="PNG", variable=self.allow_png,
+                                     command=self.update_format_checkboxes)
         self.png_cb.pack(anchor="w")
 
-        self.gif_cb = tk.Checkbutton(
-            self.master,
-            text="GIF",
-            variable=self.allow_gif,
-            command=self.update_format_checkboxes
-        )
+        self.gif_cb = tk.Checkbutton(f, text="GIF", variable=self.allow_gif,
+                                     command=self.update_format_checkboxes)
         self.gif_cb.pack(anchor="w")
 
-        self.all_cb = tk.Checkbutton(
-            self.master,
-            text="Wszystkie formaty dozwolone",
-            variable=self.allow_all_formats,
-            command=self.update_format_checkboxes
-        )
+        self.all_cb = tk.Checkbutton(f, text="Wszystkie formaty dozwolone",
+                                     variable=self.allow_all_formats,
+                                     command=self.update_format_checkboxes)
         self.all_cb.pack(anchor="w")
 
-        # Ustaw stan początkowy
         self.update_format_checkboxes()
 
+        # ----------------------------
+        # PRZYCISK POBIERANIA
+        # ----------------------------
         self.progress = tk.IntVar()
-        self.progress_bar = ttk.Progressbar(self.master, orient="horizontal", length=300, mode="determinate")
+        self.progress_bar = ttk.Progressbar(f, orient="horizontal", length=300, mode="determinate")
         self.progress_bar.pack(pady=10)
-        self.download_button = ttk.Button(self.master, text="Pobierz obrazy", command=self.start_download)
+
+        self.download_button = ttk.Button(f, text="Pobierz obrazy", command=self.start_download)
         self.download_button.pack(pady=10)
 
     def update_format_checkboxes(self):
@@ -135,8 +206,9 @@ class ImageDownloaderGUI:
             self.gif_cb.config(state="normal")
 
     def get_allowed_input_formats(self):
+        # jeśli wszystkie formaty są dozwolone → filtr WYŁĄCZONY
         if self.allow_all_formats.get():
-            return ["jpg", "jpeg", "png", "gif"]
+            return None
 
         allowed = []
         if self.allow_jpg.get():
@@ -146,7 +218,50 @@ class ImageDownloaderGUI:
         if self.allow_gif.get():
             allowed.append("gif")
 
+        # jeśli nic nie zaznaczono → traktujemy jako brak filtra
+        if not allowed:
+            return None
+
         return allowed
+
+    def update_resolution_fields(self):
+        # MINIMUM
+        if self.no_min_resolution.get():
+            self.min_width_entry.config(state="disabled")
+            self.min_height_entry.config(state="disabled")
+        else:
+            self.min_width_entry.config(state="normal")
+            self.min_height_entry.config(state="normal")
+
+        # MAXIMUM
+        if self.no_max_resolution.get():
+            self.max_width_entry.config(state="disabled")
+            self.max_height_entry.config(state="disabled")
+        else:
+            self.max_width_entry.config(state="normal")
+            self.max_height_entry.config(state="normal")
+
+    def get_resolution_filter(self):
+        """Zwraca słownik z filtrami rozdzielczości lub None."""
+        result = {}
+
+        # MIN
+        if not self.no_min_resolution.get():
+            try:
+                result["min_w"] = int(self.min_width_var.get()) if self.min_width_var.get() else None
+                result["min_h"] = int(self.min_height_var.get()) if self.min_height_var.get() else None
+            except ValueError:
+                return None  # lub podnieś wyjątek później
+
+        # MAX
+        if not self.no_max_resolution.get():
+            try:
+                result["max_w"] = int(self.max_width_var.get()) if self.max_width_var.get() else None
+                result["max_h"] = int(self.max_height_var.get()) if self.max_height_var.get() else None
+            except ValueError:
+                return None
+
+        return result
 
 
     def choose_folder(self):
@@ -156,6 +271,7 @@ class ImageDownloaderGUI:
     def update_progress(self, current, total):
         percent = int((current / total) * 100)
         self.progress_bar['value'] = percent
+
 
     def start_download(self):
         query = self.query_entry.get().strip()
@@ -266,6 +382,7 @@ class ImageDownloaderGUI:
 
     def download_from_source(self, source, query, missing, save_dir):
         allowed_formats = self.get_allowed_input_formats()
+        resolution_filter = self.get_resolution_filter()
 
         if source == "google":
             from downloader.google_downloader import download_images_google
@@ -273,7 +390,8 @@ class ImageDownloaderGUI:
                 query, missing, save_dir, self.update_progress,
                 min_size=self.get_target_size_if_crop(),
                 method=self.method_var.get(),
-                allowed_formats=allowed_formats
+                allowed_formats=allowed_formats,
+                resolution_filter=resolution_filter
             )
 
         elif source == "openverse":
@@ -282,16 +400,23 @@ class ImageDownloaderGUI:
                 query, missing, save_dir, self.update_progress,
                 min_size=self.get_target_size_if_crop(),
                 method=self.method_var.get(),
-                allowed_formats=allowed_formats
+                allowed_formats=allowed_formats,
+                resolution_filter=resolution_filter
             )
+
 
         elif source == "pexels":
             from downloader.pexels_downloader import download_images_pexels
             return download_images_pexels(
-                query, missing, save_dir, self.update_progress,
-                min_size=self.get_target_size_if_crop(),
-                method=self.method_var.get(),
-                allowed_formats=allowed_formats
+                query,
+                missing,
+                save_dir,
+                self.update_progress,
+                utils.get_next_image_index(save_dir),  # start_index
+                self.method_var.get(),  # method
+                self.get_target_size_if_crop(),  # min_size
+                allowed_formats,  # allowed_formats
+                resolution_filter  # resolution_filter
             )
 
         elif source == "pixabay":
@@ -300,7 +425,8 @@ class ImageDownloaderGUI:
                 query, missing, save_dir, self.update_progress,
                 min_size=self.get_target_size_if_crop(),
                 method=self.method_var.get(),
-                allowed_formats=allowed_formats
+                allowed_formats=allowed_formats,
+                resolution_filter=resolution_filter
             )
 
         elif source == "unsplash":
@@ -309,7 +435,8 @@ class ImageDownloaderGUI:
                 query, missing, save_dir, self.update_progress,
                 min_size=self.get_target_size_if_crop(),
                 method=self.method_var.get(),
-                allowed_formats=allowed_formats
+                allowed_formats=allowed_formats,
+                resolution_filter=resolution_filter
             )
 
         elif source == "wikimedia":
@@ -330,12 +457,27 @@ class ImageDownloaderGUI:
             "openverse": download_images_openverse,
             "wikimedia": download_images_wikimedia
         }.get(source)
+
         if not func:
             print(f"Nieznane źródło: {source}")
             return 0
-        start_index = utils.get_next_image_index(tmp_dir)
-        return func(query, missing, tmp_dir, progress_callback, start_index, min_size=self.get_target_size_if_crop(), method=self.method_var.get())
 
+        allowed_formats = self.get_allowed_input_formats()
+        resolution_filter = self.get_resolution_filter()
+
+        start_index = utils.get_next_image_index(tmp_dir)
+
+        return func(
+            query,
+            missing,
+            tmp_dir,
+            progress_callback,
+            start_index,
+            self.method_var.get(),
+            self.get_target_size_if_crop(),
+            allowed_formats,
+            resolution_filter
+        )
 
     def prompt_next_action(self, tmp_dir, query, expected_count, source):
         def ask():
