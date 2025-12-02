@@ -1,29 +1,48 @@
 import os
-import random
 import shutil
+import random
 
-def split_images(source_dir, dest_dir, subset_ratio, subsets):
+def split_images(src_folder, dst_folder, ratios, subsets, mode="random"):
+    train_ratio, valid_ratio, test_ratio = ratios
 
-    images = [f for f in os.listdir(source_dir) if f.lower().endswith(('.jpg', '.jpeg', '.png', '.gif'))]
-    random.shuffle(images)
+    # wczytujemy wszystkie pliki
+    files = [
+        f for f in os.listdir(src_folder)
+        if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+    ]
 
-    n = len(images)
-    counts = {
-        'train': int(subset_ratio[0] / 100 * n),
-        'valid': int(subset_ratio[1] / 100 * n),
-        'test': n
-    }
-    counts['test'] = n - counts['train'] - counts['valid']
+    # --- TRYB PRIORYTETOWY ---
+    if mode == "prioritize":
+        def extract_num(filename):
+            name, _ = os.path.splitext(filename)
+            return int(name) if name.isdigit() else 999999999
 
-    i = 0
+        files = sorted(files, key=extract_num)
+
+    # --- TRYB RANDOM ---
+    else:
+        random.shuffle(files)
+
+    total = len(files)
+    train_end = int((train_ratio / 100) * total)
+    valid_end = train_end + int((valid_ratio / 100) * total)
+
+    train_files = files[:train_end]
+    valid_files = files[train_end:valid_end]
+    test_files = files[valid_end:]
+
+    # Tworzymy folder docelowy
     for subset in subsets:
-        subset_dir = os.path.join(dest_dir, subset)
-        os.makedirs(subset_dir, exist_ok=True)
-        for _ in range(counts[subset]):
-            if i >= len(images):
-                break
-            src = os.path.join(source_dir, images[i])
-            ext = os.path.splitext(src)[1]  # zachowaj rozszerzenie
-            dst = os.path.join(subset_dir, f"{i + 1}{ext}")
-            shutil.copy2(src, dst)
-            i += 1
+        os.makedirs(os.path.join(dst_folder, subset), exist_ok=True)
+
+    def copy_files(fs, subset):
+        subset_path = os.path.join(dst_folder, subset)
+        for filename in fs:
+            shutil.copy(os.path.join(src_folder, filename), os.path.join(subset_path, filename))
+
+    if "train" in subsets:
+        copy_files(train_files, "train")
+    if "valid" in subsets:
+        copy_files(valid_files, "valid")
+    if "test" in subsets:
+        copy_files(test_files, "test")

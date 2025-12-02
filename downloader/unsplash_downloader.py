@@ -17,22 +17,23 @@ MAX_RES_ERRORS = 100
 SOURCE_NAME = "Unsplash"
 
 
-def _normalize_ext(pil_format: str):
-    if not pil_format:
+def _normalize_ext(fmt):
+    if not fmt:
         return None, None
 
-    fmt = pil_format.upper()
-    if fmt in ("JPG", "JPEG"):
+    fmt = fmt.upper()
+    if fmt in ("JPEG", "JPG"):
         return "jpg", "JPEG"
     if fmt == "PNG":
         return "png", "PNG"
     if fmt == "GIF":
         return "gif", "GIF"
+
     return None, None
 
 
-def _ext_to_save_fmt(ext: str):
-    ext = (ext or "").lower()
+def _ext_to_save_fmt(ext):
+    ext = ext.lower()
     if ext in ("jpg", "jpeg"):
         return "JPEG"
     if ext == "png":
@@ -54,99 +55,108 @@ def download_images_unsplash(
     resolution_filter=None,
     force_output_format=None,
 ):
+
     os.makedirs(save_dir, exist_ok=True)
+
     downloaded = 0
     page = 1
+
     format_errors = 0
-    resolution_errors = 0
+    res_errors = 0
 
     while downloaded < count:
-        params = {
-            "query": query,
-            "client_id": UNSPLASH_ACCESS_KEY,
-            "page": page,
-            "per_page": min(10, count - downloaded),
-        }
-
         response = requests.get(
             "https://api.unsplash.com/search/photos",
-            params=params,
+            params={
+                "query": query,
+                "client_id": UNSPLASH_ACCESS_KEY,
+                "page": page,
+                "per_page": min(10, count - downloaded),
+            },
         )
 
-        if response.status_code == 403 and "Rate Limit Exceeded" in response.text:
+        if response.status_code == 403 and "Rate Limit" in response.text:
             raise RateLimitException("Unsplash API limit exceeded")
 
         if response.status_code != 200:
             raise RateLimitException("Unsplash API returned an error")
 
         results = response.json().get("results", [])
+
         if not results:
             raise SourceExhaustedException(
-                f"{SOURCE_NAME}: brak dalszych wyników. "
-                f"Pobrano {downloaded} z {count} obrazów."
+                f"{SOURCE_NAME}: brak dalszych wyników. Pobrano {downloaded}/{count}."
             )
 
         for item in results:
             try:
-                img_url = item["urls"]["regular"]
-                img_data = requests.get(img_url, timeout=10).content
-                img = Image.open(BytesIO(img_data))
+                img = Image.open(BytesIO(
+                    requests.get(item["urls"]["regular"], timeout=10).content
+                ))
 
                 ext, _ = _normalize_ext(img.format)
-                if ext is None:
+                if not ext:
                     continue
 
-                if allowed_formats is not None and ext not in [f.lower() for f in allowed_formats]:
+                # --- FORMAT FILTER ---
+                if allowed_formats and ext not in allowed_formats:
                     format_errors += 1
-                    if format_errors >= MAX_FORMAT_ERRORS:
+
+                    if downloaded > 0 and format_errors >= MAX_FORMAT_ERRORS:
+                        raise SourceExhaustedException(
+                            f"{SOURCE_NAME}: wyczerpane filtrem formatu."
+                        )
+
+                    if downloaded == 0 and format_errors >= MAX_FORMAT_ERRORS:
                         raise TooManyFormatFilteredException(
-                            f"{SOURCE_NAME}: zbyt wiele obrazów odrzuconych przez filtr formatu."
+                            f"{SOURCE_NAME}: zbyt restrykcyjne filtry formatu."
                         )
                     continue
 
+                # --- RESOLUTION FILTER ---
                 if resolution_filter:
                     w, h = img.size
-                    min_w = resolution_filter.get("min_w")
-                    min_h = resolution_filter.get("min_h")
-                    max_w = resolution_filter.get("max_w")
-                    max_h = resolution_filter.get("max_h")
 
-                    if min_w is not None and w < min_w:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za wąskich."
+                    def fail(msg):
+                        nonlocal res_errors
+                        res_errors += 1
+
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane ({msg})"
                             )
+                        if downloaded == 0:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjny filtr ({msg})"
+                            )
+
+                    if resolution_filter.get("min_w") and w < resolution_filter["min_w"]:
+                        fail("za wąskie")
                         continue
-                    if min_h is not None and h < min_h:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za niskich."
-                            )
+                    if resolution_filter.get("min_h") and h < resolution_filter["min_h"]:
+                        fail("za niskie")
                         continue
-                    if max_w is not None and w > max_w:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za szerokich."
-                            )
+                    if resolution_filter.get("max_w") and w > resolution_filter["max_w"]:
+                        fail("za szerokie")
                         continue
-                    if max_h is not None and h > max_h:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za wysokich."
-                            )
+                    if resolution_filter.get("max_h") and h > resolution_filter["max_h"]:
+                        fail("za wysokie")
                         continue
 
-                if method == "crop" and min_size is not None:
+                # --- CROP ---
+                if method == "crop" and min_size:
                     mw, mh = min_size
                     if img.width < mw or img.height < mh:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
+                        res_errors += 1
+
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane (crop)"
+                            )
+
+                        if downloaded == 0:
                             raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele zbyt małych obrazów dla crop."
+                                f"{SOURCE_NAME}: za małe do crop"
                             )
                         continue
 
@@ -154,22 +164,20 @@ def download_images_unsplash(
                     continue
 
                 final_ext = (force_output_format or ext).lower()
-                save_format = _ext_to_save_fmt(final_ext)
 
-                idx = start_index + downloaded + 1
-                filename = os.path.join(save_dir, f"{idx}.{final_ext}")
+                filename = os.path.join(
+                    save_dir, f"{start_index + downloaded + 1}.{final_ext}"
+                )
 
                 if final_ext in ("jpg", "jpeg"):
                     img = img.convert("RGB")
 
-                img.save(filename, save_format)
+                img.save(filename, _ext_to_save_fmt(final_ext))
+
                 downloaded += 1
 
                 if progress_callback:
-                    progress_callback(downloaded + start_index, count + start_index)
-
-                if downloaded >= count:
-                    break
+                    progress_callback(start_index + downloaded, start_index + count)
 
             except (TooManyFormatFilteredException, TooManyResolutionFilteredException):
                 raise

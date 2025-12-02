@@ -16,35 +16,28 @@ MAX_RES_ERRORS = 40
 SOURCE_NAME = "Google"
 
 
-def _normalize_ext(pil_format: str):
-    """
-    Normalizuje format z Pillow do (ext, save_fmt).
-
-    Zwraca:
-      ("jpg", "JPEG") / ("png", "PNG") / ("gif", "GIF") / (None, None)
-    """
-    if not pil_format:
+def _normalize_ext(fmt):
+    if not fmt:
         return None, None
-
-    fmt = pil_format.upper()
-    if fmt in ("JPG", "JPEG"):
+    fmt = fmt.upper()
+    if fmt in ("JPEG", "JPG"):
         return "jpg", "JPEG"
     if fmt == "PNG":
         return "png", "PNG"
     if fmt == "GIF":
         return "gif", "GIF"
-    return None, None  # inne formaty pomijamy
+    return None, None
 
 
-def _ext_to_save_fmt(ext: str):
-    ext = (ext or "").lower()
+def _ext_to_save_fmt(ext):
+    ext = ext.lower()
     if ext in ("jpg", "jpeg"):
         return "JPEG"
     if ext == "png":
         return "PNG"
     if ext == "gif":
         return "GIF"
-    return ext.upper()  # awaryjnie
+    return ext.upper()
 
 
 def download_images_google(
@@ -59,156 +52,143 @@ def download_images_google(
     resolution_filter=None,
     force_output_format=None,
 ):
-    """
-    Pobiera obrazy z Google Custom Search API.
-
-    - allowed_formats: lista np. ["jpg","jpeg","png","gif"] lub None
-    - resolution_filter: dict z min_w, min_h, max_w, max_h lub None
-    - min_size: (w,h) dla 'crop'
-    - force_output_format: np. 'jpg' / 'png' lub None (zachowaj oryginalny)
-    """
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
-    start = 1  # offset CSE API
+    start = 1
+
     format_errors = 0
-    resolution_errors = 0
+    res_errors = 0
 
     while downloaded < count and start <= 91:
-        num = min(10, count - downloaded)
-        params = {
-            "q": query,
-            "cx": CSE_ID,
-            "key": API_KEY,
-            "searchType": "image",
-            "start": start,
-            "num": num,
-        }
-
-        response = requests.get("https://www.googleapis.com/customsearch/v1", params=params)
+        response = requests.get(
+            "https://www.googleapis.com/customsearch/v1",
+            params={
+                "q": query,
+                "cx": CSE_ID,
+                "key": API_KEY,
+                "searchType": "image",
+                "start": start,
+                "num": min(10, count - downloaded),
+            },
+        )
 
         if response.status_code == 429:
             raise RateLimitException("Google API limit exceeded.")
 
-        try:
-            response.raise_for_status()
-            data = response.json()
-
-            if "error" in data and "quota" in data["error"].get("message", "").lower():
-                raise RateLimitException("Google API quota exceeded.")
-
-        except requests.exceptions.HTTPError:
-            raise RateLimitException("Google API HTTPError")
-
+        data = response.json()
         items = data.get("items", [])
+
         if not items:
-            # brak dalszych wyników
             raise SourceExhaustedException(
-                f"{SOURCE_NAME}: brak dalszych wyników. "
-                f"Pobrano {downloaded} z {count} obrazów."
+                f"{SOURCE_NAME}: brak dalszych wyników. Pobrano {downloaded}/{count}."
             )
 
         for item in items:
             try:
-                img_url = item["link"]
-                img_data = requests.get(img_url, timeout=10).content
-                img = Image.open(BytesIO(img_data))
-
+                img = Image.open(BytesIO(requests.get(item["link"], timeout=10).content))
                 ext, save_fmt = _normalize_ext(img.format)
-                if ext is None:
-                    # Nieobsługiwany format – po prostu pomijamy
+                if not ext:
                     continue
 
                 # --- FILTR FORMATU ---
-                if allowed_formats is not None and ext not in [f.lower() for f in allowed_formats]:
+                if allowed_formats and ext not in allowed_formats:
                     format_errors += 1
-                    if format_errors >= MAX_FORMAT_ERRORS:
+                    if downloaded > 0 and format_errors >= MAX_FORMAT_ERRORS:
+                        raise SourceExhaustedException(
+                            f"{SOURCE_NAME}: wyczerpane (format). Pobrano {downloaded}/{count}."
+                        )
+                    if downloaded == 0 and format_errors >= MAX_FORMAT_ERRORS:
                         raise TooManyFormatFilteredException(
-                            f"{SOURCE_NAME}: zbyt wiele obrazów odrzuconych przez filtr formatu."
+                            f"{SOURCE_NAME}: zbyt restrykcyjny filtr formatu."
                         )
                     continue
 
                 # --- FILTR ROZDZIELCZOŚCI ---
                 if resolution_filter:
                     w, h = img.size
-                    min_w = resolution_filter.get("min_w")
-                    min_h = resolution_filter.get("min_h")
-                    max_w = resolution_filter.get("max_w")
-                    max_h = resolution_filter.get("max_h")
+                    if resolution_filter.get("min_w") and w < resolution_filter["min_w"]:
+                        res_errors += 1
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane (za mała szerokość)."
+                            )
+                        if downloaded == 0 and res_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdzielczości."
+                            )
+                        continue
+                    if resolution_filter.get("min_h") and h < resolution_filter["min_h"]:
+                        res_errors += 1
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane (za mała wysokość)."
+                            )
+                        if downloaded == 0:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdzielczości."
+                            )
+                        continue
+                    if resolution_filter.get("max_w") and w > resolution_filter["max_w"]:
+                        res_errors += 1
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane (za szerokie)."
+                            )
+                        if downloaded == 0:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdz."
+                            )
+                        continue
+                    if resolution_filter.get("max_h") and h > resolution_filter["max_h"]:
+                        res_errors += 1
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane (za wysokie)."
+                            )
+                        if downloaded == 0:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdz."
+                            )
+                        continue
 
-                    if min_w is not None and w < min_w:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za wąskich."
-                            )
-                        continue
-                    if min_h is not None and h < min_h:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za niskich."
-                            )
-                        continue
-                    if max_w is not None and w > max_w:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za szerokich."
-                            )
-                        continue
-                    if max_h is not None and h > max_h:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
-                            raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za wysokich."
-                            )
-                        continue
-
-                # --- MINIMALNY ROZMIAR DO CROP ---
-                if method == "crop" and min_size is not None:
+                # --- CROP ---
+                if method == "crop" and min_size:
                     mw, mh = min_size
                     if img.width < mw or img.height < mh:
-                        resolution_errors += 1
-                        if resolution_errors >= MAX_RES_ERRORS:
+                        res_errors += 1
+                        if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane (crop)."
+                            )
+                        if downloaded == 0:
                             raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt wiele obrazów za małych dla crop."
+                                f"{SOURCE_NAME}: za małe obrazy dla crop."
                             )
                         continue
 
                 if not is_valid_image(img):
                     continue
 
-                # finalny format
                 final_ext = (force_output_format or ext).lower()
-                save_format = _ext_to_save_fmt(final_ext)
-
-                idx = start_index + downloaded + 1
-                filename = os.path.join(save_dir, f"{idx}.{final_ext}")
+                filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{final_ext}")
 
                 if final_ext in ("jpg", "jpeg"):
                     img = img.convert("RGB")
 
-                img.save(filename, save_format)
+                img.save(filename, _ext_to_save_fmt(final_ext))
                 downloaded += 1
 
                 if progress_callback:
-                    progress_callback(downloaded + start_index, count + start_index)
+                    progress_callback(start_index + downloaded, start_index + count)
 
-                if downloaded >= count:
-                    break
-
-            except (TooManyFormatFilteredException, TooManyResolutionFilteredException):
-                raise
             except Exception:
                 continue
 
         start += 10
 
     if downloaded < count:
-        # dotarliśmy do limitu paginacji
         raise SourceExhaustedException(
-            f"{SOURCE_NAME}: brak dalszych wyników. "
-            f"Pobrano {downloaded} z {count} obrazów."
+            f"{SOURCE_NAME}: brak dalszych wyników. Pobrano {downloaded}/{count}."
         )
 
     return downloaded

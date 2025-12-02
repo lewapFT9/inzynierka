@@ -79,6 +79,7 @@ class ImageDownloaderGUI:
         self.folder_path = tk.StringVar()
         tk.Label(f, textvariable=self.folder_path, fg="gray").pack()
 
+
         tk.Label(f, text="Wybierz podzbiory:").pack()
         self.use_train = tk.BooleanVar(value=True)
         self.use_valid = tk.BooleanVar(value=True)
@@ -88,6 +89,23 @@ class ImageDownloaderGUI:
         tk.Checkbutton(f, text="test", variable=self.use_test).pack()
 
         tk.Label(f, text="Podział zbioru (train / valid / test)").pack()
+
+        # ----------------------------
+        # TRYB SPLITOWANIA
+        # ----------------------------
+        tk.Label(f, text="Tryb podziału zbioru:").pack(pady=(10, 0))
+
+        self.split_mode = tk.StringVar(value="random")
+
+        tk.Radiobutton(
+            f, text="Losowy (random)", variable=self.split_mode, value="random"
+        ).pack(anchor="w")
+
+        tk.Radiobutton(
+            f, text="Priorytet kolejności (prioritize)", variable=self.split_mode, value="prioritize"
+        ).pack(anchor="w")
+
+
         self.train_scale = tk.Scale(f, from_=10, to=90, orient=tk.HORIZONTAL, label="Train (%)")
         self.valid_scale = tk.Scale(f, from_=0, to=90, orient=tk.HORIZONTAL, label="Valid (%)")
         self.train_scale.set(70)
@@ -337,6 +355,41 @@ class ImageDownloaderGUI:
         class_name = self.class_entry.get().strip()
         folder = self.folder_path.get().strip()
         count = self.count_entry.get().strip()
+
+        # ============================================
+        # OSTRZEŻENIE O NADPISYWANIU ISTNIEJĄCEGO ZBIORU
+        # ============================================
+
+        class_dir = os.path.join(folder, class_name)
+
+        if os.path.exists(class_dir):
+            resp = messagebox.askyesnocancel(
+                "Folder już istnieje",
+                f"Folder zbioru:\n\n{class_dir}\n\njuż istnieje.\n"
+                "TAK = usuń i nadpisz cały zbiór.\n"
+                "NIE = anuluj proces pobierania.\n"
+                "ANULUJ = wróć."
+            )
+
+            if resp is True:
+                # usuwa cały zbiór (train/valid/test/cokolwiek)
+                try:
+                    import shutil
+                    shutil.rmtree(class_dir)
+                except Exception as e:
+                    messagebox.showerror("Błąd", f"Nie można usunąć folderu:\n{e}")
+                    self.download_button.config(state="normal")
+                    return
+
+            elif resp is False:
+                # przerwanie pobierania
+                self.download_button.config(state="normal")
+                return
+
+            else:
+                # anulowanie — powrót do UI
+                self.download_button.config(state="normal")
+                return
 
         if not all([query, count, class_name, folder]):
             messagebox.showerror("Błąd", "Uzupełnij wszystkie pola.")
@@ -842,7 +895,13 @@ class ImageDownloaderGUI:
             self.download_button.config(state="normal")
             return
 
-        split_images(tmp_dir, save_dir, (train_ratio, valid_ratio, test_ratio), subsets)
+        split_images(
+            tmp_dir,
+            save_dir,
+            (train_ratio, valid_ratio, test_ratio),
+            subsets,
+            mode=self.split_mode.get()
+        )
         shutil.rmtree(tmp_dir)
         messagebox.showinfo("Zakończono", f"Dane zapisano w: {save_dir}")
         self.download_button.config(state="normal")
