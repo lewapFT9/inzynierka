@@ -4,7 +4,47 @@ from PIL import Image
 from io import BytesIO
 from validator.image_validator import is_valid_image
 from downloader.google_config import API_KEY, CSE_ID
-from exceptions.exceptions import RateLimitException
+from exceptions.exceptions import (
+    RateLimitException,
+    TooManyFormatFilteredException,
+    TooManyResolutionFilteredException,
+    SourceExhaustedException,
+)
+
+MAX_FORMAT_ERRORS = 40
+MAX_RES_ERRORS = 40
+SOURCE_NAME = "Google"
+
+
+def _normalize_ext(pil_format: str):
+    """
+    Normalizuje format z Pillow do (ext, save_fmt).
+
+    Zwraca:
+      ("jpg", "JPEG") / ("png", "PNG") / ("gif", "GIF") / (None, None)
+    """
+    if not pil_format:
+        return None, None
+
+    fmt = pil_format.upper()
+    if fmt in ("JPG", "JPEG"):
+        return "jpg", "JPEG"
+    if fmt == "PNG":
+        return "png", "PNG"
+    if fmt == "GIF":
+        return "gif", "GIF"
+    return None, None  # inne formaty pomijamy
+
+
+def _ext_to_save_fmt(ext: str):
+    ext = (ext or "").lower()
+    if ext in ("jpg", "jpeg"):
+        return "JPEG"
+    if ext == "png":
+        return "PNG"
+    if ext == "gif":
+        return "GIF"
+    return ext.upper()  # awaryjnie
 
 
 def download_images_google(
@@ -17,18 +57,21 @@ def download_images_google(
     min_size=None,
     allowed_formats=None,
     resolution_filter=None,
+    force_output_format=None,
 ):
     """
     Pobiera obrazy z Google Custom Search API.
 
-    - Zachowuje oryginalny format pliku (JPEG/PNG/GIF → .jpeg/.png/.gif).
-    - Filtruje po dozwolonych formatach (allowed_formats).
-    - Filtruje po rozdzielczości (resolution_filter: min_w, min_h, max_w, max_h).
-    - Dba o to, by łączna liczba poprawnych obrazów = count.
+    - allowed_formats: lista np. ["jpg","jpeg","png","gif"] lub None
+    - resolution_filter: dict z min_w, min_h, max_w, max_h lub None
+    - min_size: (w,h) dla 'crop'
+    - force_output_format: np. 'jpg' / 'png' lub None (zachowaj oryginalny)
     """
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
-    start = 1  # parametr "start" w Google CSE (1-indeksowany)
+    start = 1  # offset CSE API
+    format_errors = 0
+    resolution_errors = 0
 
     while downloaded < count and start <= 91:
         num = min(10, count - downloaded)
@@ -49,27 +92,42 @@ def download_images_google(
         try:
             response.raise_for_status()
             data = response.json()
+
             if "error" in data and "quota" in data["error"].get("message", "").lower():
                 raise RateLimitException("Google API quota exceeded.")
+
         except requests.exceptions.HTTPError:
             raise RateLimitException("Google API HTTPError")
 
-        if "items" not in data:
-            raise RateLimitException("Google API returned no items")
+        items = data.get("items", [])
+        if not items:
+            # brak dalszych wyników
+            raise SourceExhaustedException(
+                f"{SOURCE_NAME}: brak dalszych wyników. "
+                f"Pobrano {downloaded} z {count} obrazów."
+            )
 
-        for item in data["items"]:
+        for item in items:
             try:
                 img_url = item["link"]
                 img_data = requests.get(img_url, timeout=10).content
                 img = Image.open(BytesIO(img_data))
 
-                # --- filtr formatu wejściowego ---
-                img_format = (img.format or "").lower()
-                if allowed_formats is not None and img_format not in allowed_formats:
-                    print(f"[Google] Pominięto – niedozwolony format: {img_format}")
+                ext, save_fmt = _normalize_ext(img.format)
+                if ext is None:
+                    # Nieobsługiwany format – po prostu pomijamy
                     continue
 
-                # --- filtr rozdzielczości (WEJŚCIOWEJ) ---
+                # --- FILTR FORMATU ---
+                if allowed_formats is not None and ext not in [f.lower() for f in allowed_formats]:
+                    format_errors += 1
+                    if format_errors >= MAX_FORMAT_ERRORS:
+                        raise TooManyFormatFilteredException(
+                            f"{SOURCE_NAME}: zbyt wiele obrazów odrzuconych przez filtr formatu."
+                        )
+                    continue
+
+                # --- FILTR ROZDZIELCZOŚCI ---
                 if resolution_filter:
                     w, h = img.size
                     min_w = resolution_filter.get("min_w")
@@ -78,51 +136,79 @@ def download_images_google(
                     max_h = resolution_filter.get("max_h")
 
                     if min_w is not None and w < min_w:
-                        print(f"[Google] Za mała szerokość: {w} < {min_w}")
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za wąskich."
+                            )
                         continue
                     if min_h is not None and h < min_h:
-                        print(f"[Google] Za mała wysokość: {h} < {min_h}")
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za niskich."
+                            )
                         continue
                     if max_w is not None and w > max_w:
-                        print(f"[Google] Za duża szerokość: {w} > {max_w}")
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za szerokich."
+                            )
                         continue
                     if max_h is not None and h > max_h:
-                        print(f"[Google] Za duża wysokość: {h} > {max_h}")
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za wysokich."
+                            )
                         continue
 
-                # --- minimalny rozmiar do crop ---
+                # --- MINIMALNY ROZMIAR DO CROP ---
                 if method == "crop" and min_size is not None:
-                    min_w_crop, min_h_crop = min_size
-                    if img.width < min_w_crop or img.height < min_h_crop:
-                        print("[Google] Pominięto – za małe do crop.")
+                    mw, mh = min_size
+                    if img.width < mw or img.height < mh:
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za małych dla crop."
+                            )
                         continue
 
                 if not is_valid_image(img):
                     continue
 
-                # --- zapis w oryginalnym formacie ---
-                ext = (img.format or "JPEG").lower()
-                idx = start_index + downloaded + 1
-                filename = os.path.join(save_dir, f"{idx}.{ext}")
+                # finalny format
+                final_ext = (force_output_format or ext).lower()
+                save_format = _ext_to_save_fmt(final_ext)
 
-                # konwersja do RGB tylko jeśli JPEG / JPG
-                if ext in ("jpg", "jpeg"):
+                idx = start_index + downloaded + 1
+                filename = os.path.join(save_dir, f"{idx}.{final_ext}")
+
+                if final_ext in ("jpg", "jpeg"):
                     img = img.convert("RGB")
 
-                img.save(filename)
-
+                img.save(filename, save_format)
                 downloaded += 1
+
                 if progress_callback:
                     progress_callback(downloaded + start_index, count + start_index)
 
                 if downloaded >= count:
                     break
 
+            except (TooManyFormatFilteredException, TooManyResolutionFilteredException):
+                raise
             except Exception:
                 continue
 
         start += 10
-        if start > 91 and downloaded < count:
-            raise RateLimitException("Google API pagination limit reached")
+
+    if downloaded < count:
+        # dotarliśmy do limitu paginacji
+        raise SourceExhaustedException(
+            f"{SOURCE_NAME}: brak dalszych wyników. "
+            f"Pobrano {downloaded} z {count} obrazów."
+        )
 
     return downloaded

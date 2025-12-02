@@ -4,6 +4,7 @@ def is_valid_image(img):
         img.verify()
         extrema = img.getextrema()
 
+        # odrzuć całkowicie jednolite obrazy
         if all(channel[0] == channel[1] for channel in extrema):
             return False
         return True

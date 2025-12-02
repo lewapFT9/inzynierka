@@ -1,44 +1,79 @@
-import requests
 import os
+import requests
 from PIL import Image
 from io import BytesIO
+
 from validator.image_validator import is_valid_image
 from downloader.pexels_config import PEXELS_API_KEY
-from exceptions.exceptions import RateLimitException
+from exceptions.exceptions import (
+    RateLimitException,
+    TooManyFormatFilteredException,
+    TooManyResolutionFilteredException,
+    SourceExhaustedException,
+)
+
+MAX_FORMAT_ERRORS = 100
+MAX_RES_ERRORS = 100
+SOURCE_NAME = "Pexels"
+
+
+def _normalize_ext(pil_format: str):
+    if not pil_format:
+        return None, None
+
+    fmt = pil_format.upper()
+    if fmt in ("JPG", "JPEG"):
+        return "jpg", "JPEG"
+    if fmt == "PNG":
+        return "png", "PNG"
+    if fmt == "GIF":
+        return "gif", "GIF"
+    return None, None
+
+
+def _ext_to_save_fmt(ext: str):
+    ext = (ext or "").lower()
+    if ext in ("jpg", "jpeg"):
+        return "JPEG"
+    if ext == "png":
+        return "PNG"
+    if ext == "gif":
+        return "GIF"
+    return ext.upper()
 
 
 def download_images_pexels(
-    query, count, save_dir,
+    query,
+    count,
+    save_dir,
     progress_callback=None,
     start_index=0,
     method="resize",
     min_size=None,
     allowed_formats=None,
-    resolution_filter=None
+    resolution_filter=None,
+    force_output_format=None,
 ):
-
-    print("[PEXELS] START",
-          "query=", query,
-          "count=", count,
-          "start_index=", start_index,
-          "allowed_formats=", allowed_formats,
-          "resolution_filter=", resolution_filter)
-
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
     page = 1 + start_index // 15
-
     headers = {"Authorization": PEXELS_API_KEY}
+
+    format_errors = 0
+    resolution_errors = 0
 
     while downloaded < count:
         params = {
             "query": query,
             "per_page": min(15, count - downloaded),
-            "page": page
+            "page": page,
         }
 
-        response = requests.get("https://api.pexels.com/v1/search",
-                                headers=headers, params=params, timeout=10)
+        response = requests.get(
+            "https://api.pexels.com/v1/search",
+            headers=headers,
+            params=params,
+        )
 
         if response.status_code == 429:
             raise RateLimitException("Pexels API limit exceeded")
@@ -48,44 +83,33 @@ def download_images_pexels(
 
         photos = response.json().get("photos", [])
         if not photos:
-            print("[PEXELS] Brak kolejnych zdjęć.")
-            break
+            # brak dalszych wyników
+            raise SourceExhaustedException(
+                f"{SOURCE_NAME}: brak dalszych wyników. "
+                f"Pobrano {downloaded} z {count} obrazów."
+            )
 
         for item in photos:
             try:
-                # używamy oryginalnego zdjęcia -> lepsza jakość i brak parametrów w URL
-                img_url = item["src"]["original"]
-                print("[PEXELS] Fetching:", img_url)
+                img_url = item["src"]["large"]
+                img_data = requests.get(img_url, timeout=10).content
+                img = Image.open(BytesIO(img_data))
 
-                # --- pobieranie z limitem rozmiaru ---
-                resp = requests.get(img_url, timeout=8, stream=True)
-                resp.raise_for_status()
-
-                MAX_BYTES = 12 * 1024 * 1024   # 12 MB limit
-                img_data = resp.raw.read(MAX_BYTES)
-
-                if not img_data:
-                    print("[PEXELS] Empty image data, skipping.")
+                ext, _ = _normalize_ext(img.format)
+                if ext is None:
+                    # nieobsługiwany format – pomijamy
                     continue
 
-                print("[PEXELS] GOT:", len(img_data), "bytes")
+                # --- FORMAT FILTER ---
+                if allowed_formats is not None and ext not in [f.lower() for f in allowed_formats]:
+                    format_errors += 1
+                    if format_errors >= MAX_FORMAT_ERRORS:
+                        raise TooManyFormatFilteredException(
+                            f"{SOURCE_NAME}: zbyt wiele obrazów odrzuconych przez filtr formatu."
+                        )
+                    continue
 
-                # --- wczytanie obrazu ---
-                img = Image.open(BytesIO(img_data))
-                img.load()
-
-                # poprawne rozpoznanie formatu
-                ext = (img.format or "JPEG").lower()
-                if ext == "jpeg":
-                    ext = "jpg"
-
-                # --- filtr formatu ---
-                if allowed_formats is not None:
-                    if ext not in allowed_formats:
-                        print(f"[Pexels] Pominięto – niedozwolony format: {ext}")
-                        continue
-
-                # --- filtr rozdzielczości ---
+                # --- RESOLUTION FILTER ---
                 if resolution_filter:
                     w, h = img.size
                     min_w = resolution_filter.get("min_w")
@@ -93,52 +117,72 @@ def download_images_pexels(
                     max_w = resolution_filter.get("max_w")
                     max_h = resolution_filter.get("max_h")
 
-                    if min_w and w < min_w:
-                        print("[PEXELS] Too small W:", w)
+                    if min_w is not None and w < min_w:
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za wąskich."
+                            )
                         continue
-                    if min_h and h < min_h:
-                        print("[PEXELS] Too small H:", h)
+                    if min_h is not None and h < min_h:
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za niskich."
+                            )
                         continue
-                    if max_w and w > max_w:
-                        print("[PEXELS] Too large W:", w)
+                    if max_w is not None and w > max_w:
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za szerokich."
+                            )
                         continue
-                    if max_h and h > max_h:
-                        print("[PEXELS] Too large H:", h)
+                    if max_h is not None and h > max_h:
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele obrazów za wysokich."
+                            )
                         continue
 
-                # --- filtr crop (min size) ---
+                # --- CROP MIN SIZE ---
                 if method == "crop" and min_size:
                     mw, mh = min_size
                     if img.width < mw or img.height < mh:
-                        print("[PEXELS] Too small for crop")
+                        resolution_errors += 1
+                        if resolution_errors >= MAX_RES_ERRORS:
+                            raise TooManyResolutionFilteredException(
+                                f"{SOURCE_NAME}: zbyt wiele zbyt małych obrazów dla crop."
+                            )
                         continue
 
                 if not is_valid_image(img):
-                    print("[PEXELS] Invalid image skipped.")
                     continue
 
-                filename = os.path.join(
-                    save_dir,
-                    f"{start_index + downloaded + 1}.{ext}"
-                )
+                final_ext = (force_output_format or ext).lower()
+                save_format = _ext_to_save_fmt(final_ext)
 
-                if ext in ("jpg", "jpeg"):
+                idx = start_index + downloaded + 1
+                filename = os.path.join(save_dir, f"{idx}.{final_ext}")
+
+                if final_ext in ("jpg", "jpeg"):
                     img = img.convert("RGB")
 
-                img.save(filename)
-                print("[PEXELS] Saved:", filename)
-
+                img.save(filename, save_format)
                 downloaded += 1
 
                 if progress_callback:
                     progress_callback(downloaded + start_index, count + start_index)
 
-            except Exception as e:
-                print("[Pexels] Error:", e)
-                continue
+                if downloaded >= count:
+                    break
 
-            if downloaded >= count:
-                break
+            except (TooManyFormatFilteredException, TooManyResolutionFilteredException):
+                raise
+            except Exception as e:
+                print(f"[Pexels] Error:", e)
+                continue
 
         page += 1
 
