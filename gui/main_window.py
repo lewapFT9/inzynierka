@@ -231,10 +231,18 @@ class ImageDownloaderGUI:
         )
         self.resize_radio_crop.pack()
 
-        tk.Label(f, text="Szerokość x Wysokość (np. 224x224):").pack()
-        self.resolution_entry = tk.Entry(f)
-        self.resolution_entry.insert(0, "224x224")
-        self.resolution_entry.pack()
+        size_frame = tk.Frame(f)
+        size_frame.pack(pady=5)
+
+        tk.Label(size_frame, text="Szerokość:").grid(row=0, column=0, padx=5, sticky="e")
+        self.width_entry = tk.Entry(size_frame, width=6)
+        self.width_entry.insert(0, "224")
+        self.width_entry.grid(row=0, column=1)
+
+        tk.Label(size_frame, text="Wysokość:").grid(row=0, column=2, padx=5, sticky="e")
+        self.height_entry = tk.Entry(size_frame, width=6)
+        self.height_entry.insert(0, "224")
+        self.height_entry.grid(row=0, column=3)
 
         # wywołanie inicjalne — ustawi odpowiedni stan pól
         self.update_resize_fields()
@@ -297,6 +305,153 @@ class ImageDownloaderGUI:
     # =========================
     #   FORMATY I ROZDZIELCZOŚĆ
     # =========================
+
+    def validate_positive_int(self, entry_widget, field_name):
+        """
+        Waliduje dodatnią liczbę całkowitą.
+        Zwraca:
+            int   → poprawna wartość
+            None  → pole puste
+            "error" → błąd (wyświetlony komunikat)
+        """
+        value = entry_widget.get().strip()
+
+        if value == "":
+            return None
+
+        try:
+            num = int(value)
+            if num <= 0:
+                raise ValueError
+            return num
+        except:
+            messagebox.showerror("Błąd danych",
+                                 f"{field_name} musi być dodatnią liczbą całkowitą.")
+            return "error"
+
+    def get_resolution_filter_val(self):
+        result = {}
+
+        # --- MIN ---
+        min_w = min_h = None
+        if not self.no_min_resolution.get():  # pole aktywne
+            if not self.min_width_var.get().strip():
+                messagebox.showerror("Błąd danych", "Pole 'Min szerokość' nie może być puste.")
+                return "error"
+            if not self.min_height_var.get().strip():
+                messagebox.showerror("Błąd danych", "Pole 'Min wysokość' nie może być puste.")
+                return "error"
+
+            min_w = self.validate_positive_int(self.min_width_entry, "Minimalna szerokość")
+            min_h = self.validate_positive_int(self.min_height_entry, "Minimalna wysokość")
+            if min_w == "error" or min_h == "error":
+                return "error"
+
+            result["min_w"] = min_w
+            result["min_h"] = min_h
+
+        # --- MAX ---
+        max_w = max_h = None
+        if not self.no_max_resolution.get():  # pole aktywne
+            if not self.max_width_var.get().strip():
+                messagebox.showerror("Błąd danych", "Pole 'Max szerokość' nie może być puste.")
+                return "error"
+            if not self.max_height_var.get().strip():
+                messagebox.showerror("Błąd danych", "Pole 'Max wysokość' nie może być puste.")
+                return "error"
+
+            max_w = self.validate_positive_int(self.max_width_entry, "Maksymalna szerokość")
+            max_h = self.validate_positive_int(self.max_height_entry, "Maksymalna wysokość")
+            if max_w == "error" or max_h == "error":
+                return "error"
+
+            result["max_w"] = max_w
+            result["max_h"] = max_h
+
+        # --- WALIDACJA min < max ---
+        if min_w is not None and max_w is not None:
+            if max_w <= min_w:
+                messagebox.showerror("Błąd danych", "Maksymalna szerokość musi być większa niż minimalna.")
+                return "error"
+
+        if min_h is not None and max_h is not None:
+            if max_h <= min_h:
+                messagebox.showerror("Błąd danych", "Maksymalna wysokość musi być większa niż minimalna.")
+                return "error"
+
+        if not result:
+            return None
+
+        return result
+
+    def get_filesize_filter_val(self):
+        result = {}
+
+        min_mb = max_mb = None
+
+        # --- MIN ---
+        if not self.no_min_filesize.get():  # jeśli pole aktywne
+            if not self.min_filesize_var.get().strip():
+                messagebox.showerror("Błąd danych", "Minimalna waga (MB) nie może być pusta.")
+                return "error"
+
+            min_mb = self.validate_positive_int(self.min_filesize_entry, "Minimalna waga (MB)")
+            if min_mb == "error":
+                return "error"
+
+            result["min_mb"] = min_mb
+
+        # --- MAX ---
+        if not self.no_max_filesize.get():  # jeśli pole aktywne
+            if not self.max_filesize_var.get().strip():
+                messagebox.showerror("Błąd danych", "Maksymalna waga (MB) nie może być pusta.")
+                return "error"
+
+            max_mb = self.validate_positive_int(self.max_filesize_entry, "Maksymalna waga (MB)")
+            if max_mb == "error":
+                return "error"
+
+            result["max_mb"] = max_mb
+
+        # --- WALIDACJA min < max ---
+        if min_mb is not None and max_mb is not None:
+            if max_mb <= min_mb:
+                messagebox.showerror("Błąd danych", "Maksymalna waga (MB) musi być większa niż minimalna.")
+                return "error"
+
+        if not result:
+            return None
+
+        return result
+
+    def get_target_resize_size_val(self):
+        """
+        Zwraca (szerokość, wysokość) jeśli skalowanie jest włączone,
+        None jeśli jest wyłączone, albo "error" jeśli walidacja nie przeszła.
+        """
+        if not self.resize_enabled.get():
+            return None
+
+        # najpierw sprawdzamy, czy pola nie są puste
+        if not self.width_entry.get().strip():
+            messagebox.showerror("Błąd danych", "Szerokość docelowa nie może być pusta.")
+            self.width_entry.focus_set()
+            return "error"
+
+        if not self.height_entry.get().strip():
+            messagebox.showerror("Błąd danych", "Wysokość docelowa nie może być pusta.")
+            self.height_entry.focus_set()
+            return "error"
+
+        # a dopiero potem używamy wspólnej walidacji liczby dodatniej
+        w = self.validate_positive_int(self.width_entry, "Szerokość docelowa")
+        h = self.validate_positive_int(self.height_entry, "Wysokość docelowa")
+
+        if w == "error" or h == "error":
+            return "error"
+
+        return (w, h)
+
     def update_format_checkboxes(self):
         if self.allow_all_formats.get():
             self.allow_jpg.set(True)
@@ -346,16 +501,16 @@ class ImageDownloaderGUI:
             self.max_height_entry.config(state="normal")
 
     def update_resize_fields(self):
-        """Blokuje/odblokowuje opcje resize/crop w zależności od checkboxa."""
         if self.resize_enabled.get():
             self.resize_radio_resize.config(state="normal")
             self.resize_radio_crop.config(state="normal")
-            self.resolution_entry.config(state="normal")
+            self.width_entry.config(state="normal")
+            self.height_entry.config(state="normal")
         else:
             self.resize_radio_resize.config(state="disabled")
             self.resize_radio_crop.config(state="disabled")
-            self.resolution_entry.config(state="disabled")
-
+            self.width_entry.config(state="disabled")
+            self.height_entry.config(state="disabled")
 
     def get_resolution_filter(self):
         """Zwraca słownik z filtrami rozdzielczości lub None."""
@@ -441,13 +596,15 @@ class ImageDownloaderGUI:
         self.progress_bar['value'] = percent
 
     def get_target_size_if_crop(self):
-        if self.method_var.get() == "crop":
-            try:
-                w, h = map(int, self.resolution_entry.get().lower().strip().split("x"))
-                return (w, h)
-            except Exception:
-                return None
-        return None
+        if self.method_var.get() != "crop":
+            return None
+
+        try:
+            w = int(self.width_entry.get())
+            h = int(self.height_entry.get())
+            return (w, h)
+        except:
+            return None
 
     # =========================
     #   START DOWNLOAD
@@ -462,6 +619,20 @@ class ImageDownloaderGUI:
         # ============================================
         # OSTRZEŻENIE O NADPISYWANIU ISTNIEJĄCEGO ZBIORU
         # ============================================
+        # walidacja filtrów rozdzielczości
+        res_filter = self.get_resolution_filter_val()
+        if res_filter == "error":
+            return
+
+        # walidacja filtru wagi
+        filesize_filter = self.get_filesize_filter_val()
+        if filesize_filter == "error":
+            return
+
+        # walidacja resize/crop
+        resize_size = self.get_target_resize_size_val()
+        if resize_size == "error":
+            return
 
         class_dir = os.path.join(folder, class_name)
 
@@ -1030,9 +1201,9 @@ class ImageDownloaderGUI:
     def process_resize_and_split(self, tmp_dir):
         if self.resize_enabled.get():
             try:
-                width, height = map(int, self.resolution_entry.get().lower().strip().split("x"))
+                width = int(self.width_entry.get())
+                height = int(self.height_entry.get())
                 apply_resize_to_folder(tmp_dir, (width, height), self.method_var.get())
-                print(f"Przeskalowano do {width}x{height}")
             except Exception as e:
                 messagebox.showerror("Błąd", f"Nie udało się przeskalować: {e}")
                 self.download_button.config(state="normal")
