@@ -9,10 +9,12 @@ from exceptions.exceptions import (
     TooManyFormatFilteredException,
     TooManyResolutionFilteredException,
     SourceExhaustedException,
+    TooManyFilesizeFilteredException,
 )
 
 MAX_FORMAT_ERRORS = 100
 MAX_RES_ERRORS = 100
+MAX_FILESIZE_ERRORS = 100
 SOURCE_NAME = "Openverse"
 
 
@@ -53,8 +55,8 @@ def download_images_openverse(
     allowed_formats=None,
     resolution_filter=None,
     force_output_format=None,
+    filesize_filter=None,
 ):
-
     os.makedirs(save_dir, exist_ok=True)
 
     downloaded = 0
@@ -62,6 +64,7 @@ def download_images_openverse(
 
     format_errors = 0
     res_errors = 0
+    filesize_errors = 0
 
     while downloaded < count:
         response = requests.get(
@@ -89,12 +92,43 @@ def download_images_openverse(
 
         for item in results:
             try:
-                if not item.get("url"):
+                url = item.get("url")
+                if not url:
                     continue
 
-                img = Image.open(BytesIO(
-                    requests.get(item["url"], timeout=10).content
-                ))
+                raw = requests.get(url, timeout=10).content
+
+                # --- FILTR WAGI PLIKU (MB) ---
+                if filesize_filter:
+                    size_mb = len(raw) / (1024 * 1024)
+                    min_mb = filesize_filter.get("min_mb")
+                    max_mb = filesize_filter.get("max_mb")
+
+                    if min_mb is not None and size_mb < min_mb:
+                        filesize_errors += 1
+                        if downloaded > 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane przez filtr minimalnej wagi pliku."
+                            )
+                        if downloaded == 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise TooManyFilesizeFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjny filtr minimalnej wagi pliku."
+                            )
+                        continue
+
+                    if max_mb is not None and size_mb > max_mb:
+                        filesize_errors += 1
+                        if downloaded > 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane przez filtr maksymalnej wagi pliku."
+                            )
+                        if downloaded == 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise TooManyFilesizeFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjny filtr maksymalnej wagi pliku."
+                            )
+                        continue
+
+                img = Image.open(BytesIO(raw))
 
                 ext, _ = _normalize_ext(img.format)
                 if not ext:
@@ -103,12 +137,10 @@ def download_images_openverse(
                 # --- FORMAT FILTER ---
                 if allowed_formats and ext not in allowed_formats:
                     format_errors += 1
-
                     if downloaded > 0 and format_errors >= MAX_FORMAT_ERRORS:
                         raise SourceExhaustedException(
-                            f"{SOURCE_NAME}: wyczerpane filtrem formatu."
+                            f"{SOURCE_NAME}: wyczerpane przez filtr formatu."
                         )
-
                     if downloaded == 0 and format_errors >= MAX_FORMAT_ERRORS:
                         raise TooManyFormatFilteredException(
                             f"{SOURCE_NAME}: zbyt restrykcyjne filtry formatu."
@@ -181,7 +213,11 @@ def download_images_openverse(
                 if progress_callback:
                     progress_callback(start_index + downloaded, start_index + count)
 
-            except (TooManyFormatFilteredException, TooManyResolutionFilteredException):
+            except (
+                TooManyFormatFilteredException,
+                TooManyResolutionFilteredException,
+                TooManyFilesizeFilteredException,
+            ):
                 raise
             except Exception:
                 continue

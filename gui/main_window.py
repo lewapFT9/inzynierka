@@ -21,6 +21,7 @@ from exceptions.exceptions import (
     TooManyFormatFilteredException,
     TooManyResolutionFilteredException,
     SourceExhaustedException,
+    TooManyFilesizeFilteredException
 )
 
 
@@ -167,20 +168,77 @@ class ImageDownloaderGUI:
         self.update_resolution_fields()
 
         # ----------------------------
+        # FILTR ROZMIARU PLIKU (MB)
+        # ----------------------------
+        tk.Label(f, text="Filtr rozmiaru pliku (MB):").pack(pady=(10, 0))
+
+        filesize_frame = tk.Frame(f)
+        filesize_frame.pack()
+
+        self.no_min_filesize = tk.BooleanVar(value=True)
+        self.no_max_filesize = tk.BooleanVar(value=True)
+
+        self.min_filesize_var = tk.StringVar(value="")
+        self.max_filesize_var = tk.StringVar(value="")
+
+        tk.Checkbutton(
+            filesize_frame,
+            text="Brak minimalnej",
+            variable=self.no_min_filesize,
+            command=lambda: self.update_filesize_fields()
+        ).grid(row=0, column=0, sticky="w")
+
+        tk.Label(filesize_frame, text="Min (MB):").grid(row=1, column=0, sticky="e")
+        self.min_filesize_entry = tk.Entry(filesize_frame, textvariable=self.min_filesize_var, width=8)
+        self.min_filesize_entry.grid(row=1, column=1)
+
+        tk.Checkbutton(
+            filesize_frame,
+            text="Brak maksymalnej",
+            variable=self.no_max_filesize,
+            command=lambda: self.update_filesize_fields()
+        ).grid(row=2, column=0, sticky="w")
+
+        tk.Label(filesize_frame, text="Max (MB):").grid(row=3, column=0, sticky="e")
+        self.max_filesize_entry = tk.Entry(filesize_frame, textvariable=self.max_filesize_var, width=8)
+        self.max_filesize_entry.grid(row=3, column=1)
+
+        self.update_filesize_fields()
+
+        # ----------------------------
         # SCALING / CROP
         # ----------------------------
         tk.Label(f, text="Zmiana rozdzielczości obrazów:").pack(pady=(10, 0))
+
         self.resize_enabled = tk.BooleanVar(value=True)
-        tk.Checkbutton(f, text="Włącz skalowanie", variable=self.resize_enabled).pack()
+        tk.Checkbutton(
+            f,
+            text="Włącz skalowanie",
+            variable=self.resize_enabled,
+            command=self.update_resize_fields
+        ).pack()
 
         self.method_var = tk.StringVar(value="resize")
-        tk.Radiobutton(f, text="Zmień rozmiar", variable=self.method_var, value="resize").pack()
-        tk.Radiobutton(f, text="Wytnij środek", variable=self.method_var, value="crop").pack()
+
+        # przechowujemy referencje do radiobuttonów, aby móc zmieniać ich stan
+        self.resize_radio_resize = tk.Radiobutton(
+            f, text="Zmień rozmiar", variable=self.method_var, value="resize"
+        )
+        self.resize_radio_resize.pack()
+
+        self.resize_radio_crop = tk.Radiobutton(
+            f, text="Wytnij środek", variable=self.method_var, value="crop"
+        )
+        self.resize_radio_crop.pack()
 
         tk.Label(f, text="Szerokość x Wysokość (np. 224x224):").pack()
         self.resolution_entry = tk.Entry(f)
         self.resolution_entry.insert(0, "224x224")
         self.resolution_entry.pack()
+
+        # wywołanie inicjalne — ustawi odpowiedni stan pól
+        self.update_resize_fields()
+
 
         # ----------------------------
         # FORMATY WEJŚCIOWE
@@ -287,6 +345,18 @@ class ImageDownloaderGUI:
             self.max_width_entry.config(state="normal")
             self.max_height_entry.config(state="normal")
 
+    def update_resize_fields(self):
+        """Blokuje/odblokowuje opcje resize/crop w zależności od checkboxa."""
+        if self.resize_enabled.get():
+            self.resize_radio_resize.config(state="normal")
+            self.resize_radio_crop.config(state="normal")
+            self.resolution_entry.config(state="normal")
+        else:
+            self.resize_radio_resize.config(state="disabled")
+            self.resize_radio_crop.config(state="disabled")
+            self.resolution_entry.config(state="disabled")
+
+
     def get_resolution_filter(self):
         """Zwraca słownik z filtrami rozdzielczości lub None."""
         result = {}
@@ -304,6 +374,28 @@ class ImageDownloaderGUI:
             try:
                 result["max_w"] = int(self.max_width_var.get()) if self.max_width_var.get() else None
                 result["max_h"] = int(self.max_height_var.get()) if self.max_height_var.get() else None
+            except ValueError:
+                return None
+
+        if not any(result.values()):
+            return None
+
+        return result
+
+    def get_filesize_filter(self):
+        result = {}
+
+        # MIN
+        if not self.no_min_filesize.get():
+            try:
+                result["min_mb"] = float(self.min_filesize_var.get()) if self.min_filesize_var.get() else None
+            except ValueError:
+                return None
+
+        # MAX
+        if not self.no_max_filesize.get():
+            try:
+                result["max_mb"] = float(self.max_filesize_var.get()) if self.max_filesize_var.get() else None
             except ValueError:
                 return None
 
@@ -332,6 +424,17 @@ class ImageDownloaderGUI:
     def choose_folder(self):
         folder = filedialog.askdirectory(title="Wybierz folder docelowy")
         self.folder_path.set(folder)
+
+    def update_filesize_fields(self):
+        if self.no_min_filesize.get():
+            self.min_filesize_entry.config(state="disabled")
+        else:
+            self.min_filesize_entry.config(state="normal")
+
+        if self.no_max_filesize.get():
+            self.max_filesize_entry.config(state="disabled")
+        else:
+            self.max_filesize_entry.config(state="normal")
 
     def update_progress(self, current, total):
         percent = int((current / total) * 100) if total > 0 else 0
@@ -479,6 +582,10 @@ class ImageDownloaderGUI:
         except TooManyResolutionFilteredException as e:
             print(f"[{source}] RESOLUTION FILTER: {e}")
             self.master.after(0, lambda: self.handle_resolution_filtered(source, str(e)))
+
+        except TooManyFilesizeFilteredException as e:
+            print(f"[{source}] FILESIZE FILTER: {e}")
+            self.master.after(0, lambda: self.handle_filesize_filtered(source, str(e)))
 
         except SourceExhaustedException as e:
             print(f"[{source}] EXHAUSTED: {e}")
@@ -685,6 +792,56 @@ class ImageDownloaderGUI:
             # ANULUJ
             self.download_button.config(state="normal")
 
+    def handle_filesize_filtered(self, source, reason):
+        msg = (
+            f"{reason}\n\n"
+            "Wybrane filtry rozmiaru pliku są prawdopodobnie zbyt restrykcyjne.\n\n"
+            "TAK = wyłącz filtr wagi i spróbuj ponownie.\n"
+            "NIE = wybierz inne źródło.\n"
+            "ANULUJ = przerwij pobieranie."
+        )
+        resp = messagebox.askyesnocancel("Brak zgodnego rozmiaru pliku", msg)
+
+        if resp is True:
+            # wyłączenie filtra
+            self.no_min_filesize.set(True)
+            self.no_max_filesize.set(True)
+            self.update_filesize_fields()
+
+            tmp_dir = self.tmp_dir
+            current_files = [
+                f for f in os.listdir(tmp_dir)
+                if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+            ]
+            current_count = len(current_files)
+            self.run_download_with_resume(source, tmp_dir, self.query, self.count, current_count)
+
+        elif resp is False:
+            # wybór nowego źródła
+            self.available_sources = [s for s in self.available_sources if s != source]
+
+            if not self.available_sources:
+                messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane.")
+                self.download_button.config(state="normal")
+                return
+
+            tmp_dir = self.tmp_dir
+            current_files = [
+                f for f in os.listdir(tmp_dir)
+                if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
+            ]
+            current_count = len(current_files)
+
+            SourceSelector(
+                self.master,
+                self.available_sources,
+                lambda new_src: self.run_download_with_resume(
+                    new_src, tmp_dir, self.query, self.count, current_count
+                )
+            )
+        else:
+            self.download_button.config(state="normal")
+
     # =========================
     #   WYBÓR ŹRÓDŁA I RESUME
     # =========================
@@ -700,6 +857,7 @@ class ImageDownloaderGUI:
             allowed_formats=allowed_formats,
             resolution_filter=resolution_filter,
             force_output_format=self.force_output_format,
+            filesize_filter=self.get_filesize_filter(),
         )
 
         if source == "google":
@@ -744,6 +902,7 @@ class ImageDownloaderGUI:
             allowed_formats=allowed_formats,
             resolution_filter=resolution_filter,
             force_output_format=self.force_output_format,
+            filesize_filter=self.get_filesize_filter(),
         )
 
     def run_download_with_resume(self, source, tmp_dir, query, expected_count, current_count):
@@ -793,6 +952,11 @@ class ImageDownloaderGUI:
         except TooManyResolutionFilteredException as e:
             print(f"[{source}] RESOLUTION FILTER (RESUME): {e}")
             self.master.after(0, lambda: self.handle_resolution_filtered(source, str(e)))
+            return
+
+        except TooManyFilesizeFilteredException as e:
+            print(f"[{source}] FILESIZE FILTER: {e}")
+            self.master.after(0, lambda: self.handle_filesize_filtered(source, str(e)))
             return
 
 

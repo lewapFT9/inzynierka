@@ -9,10 +9,12 @@ from exceptions.exceptions import (
     TooManyFormatFilteredException,
     TooManyResolutionFilteredException,
     SourceExhaustedException,
+    TooManyFilesizeFilteredException,
 )
 
 MAX_FORMAT_ERRORS = 40
 MAX_RES_ERRORS = 40
+MAX_FILESIZE_ERRORS = 40
 SOURCE_NAME = "Google"
 
 
@@ -51,6 +53,7 @@ def download_images_google(
     allowed_formats=None,
     resolution_filter=None,
     force_output_format=None,
+    filesize_filter=None,
 ):
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
@@ -58,6 +61,7 @@ def download_images_google(
 
     format_errors = 0
     res_errors = 0
+    filesize_errors = 0
 
     while downloaded < count and start <= 91:
         response = requests.get(
@@ -85,7 +89,41 @@ def download_images_google(
 
         for item in items:
             try:
-                img = Image.open(BytesIO(requests.get(item["link"], timeout=10).content))
+                url = item["link"]
+                raw = requests.get(url, timeout=10).content
+
+                # --- FILTR WAGI PLIKU (MB) ---
+                if filesize_filter:
+                    size_mb = len(raw) / (1024 * 1024)
+                    min_mb = filesize_filter.get("min_mb")
+                    max_mb = filesize_filter.get("max_mb")
+
+                    if min_mb is not None and size_mb < min_mb:
+                        filesize_errors += 1
+                        if downloaded > 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane przez filtr minimalnej wagi pliku."
+                            )
+                        if downloaded == 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise TooManyFilesizeFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjny filtr minimalnej wagi pliku."
+                            )
+                        continue
+
+                    if max_mb is not None and size_mb > max_mb:
+                        filesize_errors += 1
+                        if downloaded > 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise SourceExhaustedException(
+                                f"{SOURCE_NAME}: wyczerpane przez filtr maksymalnej wagi pliku."
+                            )
+                        if downloaded == 0 and filesize_errors >= MAX_FILESIZE_ERRORS:
+                            raise TooManyFilesizeFilteredException(
+                                f"{SOURCE_NAME}: zbyt restrykcyjny filtr maksymalnej wagi pliku."
+                            )
+                        continue
+
+                img = Image.open(BytesIO(raw))
+
                 ext, save_fmt = _normalize_ext(img.format)
                 if not ext:
                     continue
@@ -95,7 +133,7 @@ def download_images_google(
                     format_errors += 1
                     if downloaded > 0 and format_errors >= MAX_FORMAT_ERRORS:
                         raise SourceExhaustedException(
-                            f"{SOURCE_NAME}: wyczerpane (format). Pobrano {downloaded}/{count}."
+                            f"{SOURCE_NAME}: wyczerpane filtrem formatu."
                         )
                     if downloaded == 0 and format_errors >= MAX_FORMAT_ERRORS:
                         raise TooManyFormatFilteredException(
@@ -110,7 +148,7 @@ def download_images_google(
                         res_errors += 1
                         if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
                             raise SourceExhaustedException(
-                                f"{SOURCE_NAME}: wyczerpane (za mała szerokość)."
+                                f"{SOURCE_NAME}: wyczerpane (za wąskie)."
                             )
                         if downloaded == 0 and res_errors >= MAX_RES_ERRORS:
                             raise TooManyResolutionFilteredException(
@@ -121,7 +159,7 @@ def download_images_google(
                         res_errors += 1
                         if downloaded > 0 and res_errors >= MAX_RES_ERRORS:
                             raise SourceExhaustedException(
-                                f"{SOURCE_NAME}: wyczerpane (za mała wysokość)."
+                                f"{SOURCE_NAME}: wyczerpane (za niskie)."
                             )
                         if downloaded == 0:
                             raise TooManyResolutionFilteredException(
@@ -136,7 +174,7 @@ def download_images_google(
                             )
                         if downloaded == 0:
                             raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdz."
+                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdzielczości."
                             )
                         continue
                     if resolution_filter.get("max_h") and h > resolution_filter["max_h"]:
@@ -147,7 +185,7 @@ def download_images_google(
                             )
                         if downloaded == 0:
                             raise TooManyResolutionFilteredException(
-                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdz."
+                                f"{SOURCE_NAME}: zbyt restrykcyjne filtry rozdzielczości."
                             )
                         continue
 
@@ -181,6 +219,8 @@ def download_images_google(
                 if progress_callback:
                     progress_callback(start_index + downloaded, start_index + count)
 
+            except (TooManyFormatFilteredException, TooManyResolutionFilteredException, TooManyFilesizeFilteredException):
+                raise
             except Exception:
                 continue
 
