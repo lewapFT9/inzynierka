@@ -1,8 +1,8 @@
 import tkinter as tk
-from gui.main_window import ImageDownloaderGUI
+from gui.mode_selector import ModeSelectorWindow
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ImageDownloaderGUI(root)
-    root.geometry("350x800")
+    ModeSelectorWindow(root)
+    root.geometry("350x350")
     root.mainloop()
