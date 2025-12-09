@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 from resizer.image_resizer import apply_resize_to_folder2
+from gui.mode_selector import ModeSelectorWindow
 
 
 class ResizeExistingWindow:
@@ -9,8 +10,10 @@ class ResizeExistingWindow:
     def __init__(self, master):
         self.master = master
 
+
         frame = tk.Frame(master, padx=20, pady=20)
         frame.pack(fill="both", expand=True)
+        tk.Button(frame, text="⬅ Powrót", command=self.return_to_mode_selector).pack(pady=10)
 
         tk.Label(frame, text="Wybierz folder istniejącego zbioru:").pack()
 
@@ -34,6 +37,14 @@ class ResizeExistingWindow:
         tk.Button(
             frame, text="Rozpocznij skalowanie", command=self.start_resize
         ).pack(pady=20)
+
+    def return_to_mode_selector(self):
+        self.master.destroy()
+
+        new_root = tk.Tk()
+        ModeSelectorWindow(new_root)
+        new_root.mainloop()
+
 
     def select_folder(self):
         folder = filedialog.askdirectory()

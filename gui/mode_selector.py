@@ -1,6 +1,5 @@
 import tkinter as tk
-from gui.main_window import ImageDownloaderGUI
-from gui.resize_existing import ResizeExistingWindow
+
 
 
 class ModeSelectorWindow:
@@ -37,6 +36,10 @@ class ModeSelectorWindow:
             command=self.open_resize_existing
         ).pack(fill="x", pady=5)
 
+    def reopen(self):
+        """Ponownie pokazuje okno wyboru trybu."""
+        self.master.deiconify()
+
     def _clear_root(self):
         """Czyści okno przed załadowaniem nowego modułu."""
         for w in self.master.winfo_children():
@@ -44,12 +47,15 @@ class ModeSelectorWindow:
 
     def open_downloader(self):
         """Uruchamia GUI pobierania danych."""
+        from gui.main_window import ImageDownloaderGUI
+
         self._clear_root()
         self.master.title("INŻYNIERKA – pobieranie zbioru")
         self.master.geometry("350x800")
         ImageDownloaderGUI(self.master)
 
     def open_resize_existing(self):
+        from gui.resize_existing import ResizeExistingWindow
         """Uruchamia GUI zmiany rozdzielczości istniejącego zbioru."""
         self._clear_root()
         self.master.title("INŻYNIERKA – zmiana rozdzielczości")

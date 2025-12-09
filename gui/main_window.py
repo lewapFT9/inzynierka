@@ -23,6 +23,7 @@ from exceptions.exceptions import (
     SourceExhaustedException,
     TooManyFilesizeFilteredException
 )
+from gui.mode_selector import ModeSelectorWindow
 
 
 class ImageDownloaderGUI:
@@ -61,6 +62,10 @@ class ImageDownloaderGUI:
     # =========================
     def build_ui(self):
         f = self.scrollable_frame  # skrót
+        # ----------------------------
+        # POWRÓT DO OKNA WYBORU TRYBU
+        # ----------------------------
+        tk.Button(f, text="⬅ Powrót", command=self.return_to_mode_selector).pack(pady=10)
 
         tk.Label(f, text="Hasło do wyszukiwania (query):").pack()
         self.query_entry = tk.Entry(f, width=40)
@@ -305,6 +310,17 @@ class ImageDownloaderGUI:
     # =========================
     #   FORMATY I ROZDZIELCZOŚĆ
     # =========================
+
+    def return_to_mode_selector(self):
+
+        # Zamknij bieżące okno
+        self.master.destroy()
+
+        # Utwórz nowe główne okno i pokaż selektor trybu
+        new_root = tk.Tk()
+        ModeSelectorWindow(new_root)
+        new_root.mainloop()
+
 
     def validate_positive_int(self, entry_widget, field_name):
         """
