@@ -25,6 +25,56 @@ from exceptions.exceptions import (
 )
 from gui.mode_selector import ModeSelectorWindow
 
+import subprocess
+import platform
+import re
+
+def measure_connection_quality():
+    """
+    Zwraca tuple:
+        (latency_ms, status)
+    gdzie status to: "good", "medium", "bad", "no_internet"
+    """
+
+    param = "-n" if platform.system().lower() == "windows" else "-c"
+    command = ["ping", param, "1", "8.8.8.8"]
+
+    try:
+        result = subprocess.run(
+            command,
+            capture_output=True,
+            text=True
+        )
+
+        if result.returncode != 0:
+            return (None, "no_internet")
+
+        # --- PARSING PINGA ---
+        out = result.stdout
+
+        # Windows ─ "Average = 32ms"
+        # Linux   ─ "time=32.5 ms"
+        match = re.search(r"(\d+\.?\d*)\s*ms", out)
+
+        if not match:
+            return (None, "good")  # nie udało się odczytać → zakładamy ok
+
+        latency = float(match.group(1))
+
+        # --- OCENA ---
+        if latency < 80:
+            status = "good"
+        elif latency < 200:
+            status = "medium"
+        else:
+            status = "bad"
+
+        return (latency, status)
+
+    except Exception:
+        return (None, "no_internet")
+
+
 
 class ImageDownloaderGUI:
 
@@ -85,16 +135,38 @@ class ImageDownloaderGUI:
         self.folder_path = tk.StringVar()
         tk.Label(f, textvariable=self.folder_path, fg="gray").pack()
 
+        tk.Label(f, text="Podział zbioru (train / valid / test)").pack()
 
         tk.Label(f, text="Wybierz podzbiory:").pack()
         self.use_train = tk.BooleanVar(value=True)
         self.use_valid = tk.BooleanVar(value=True)
         self.use_test = tk.BooleanVar(value=True)
-        tk.Checkbutton(f, text="train", variable=self.use_train).pack()
-        tk.Checkbutton(f, text="valid", variable=self.use_valid).pack()
-        tk.Checkbutton(f, text="test", variable=self.use_test).pack()
 
-        tk.Label(f, text="Podział zbioru (train / valid / test)").pack()
+        def on_subset_toggle():
+            # TRAIN
+            if not self.use_train.get():
+                self.train_scale.set(0)
+                self.train_scale.config(state="disabled")
+            else:
+                self.train_scale.config(state="normal")
+
+            # VALID
+            if not self.use_valid.get():
+                self.valid_scale.set(0)
+                self.valid_scale.config(state="disabled")
+            else:
+                self.valid_scale.config(state="normal")
+
+            # TEST
+            if not self.use_test.get():
+                self.test_scale.set(0)
+                self.test_scale.config(state="disabled")
+            else:
+                self.test_scale.config(state="normal")
+
+        tk.Checkbutton(f, text="train", variable=self.use_train, command=on_subset_toggle).pack()
+        tk.Checkbutton(f, text="valid", variable=self.use_valid, command=on_subset_toggle).pack()
+        tk.Checkbutton(f, text="test", variable=self.use_test, command=on_subset_toggle).pack()
 
         # ----------------------------
         # TRYB SPLITOWANIA
@@ -111,13 +183,22 @@ class ImageDownloaderGUI:
             f, text="Priorytet kolejności (prioritize)", variable=self.split_mode, value="prioritize"
         ).pack(anchor="w")
 
+        # ----------------------------
+        # TRZY SUWAKI: TRAIN / VALID / TEST (bez automatycznej normalizacji)
+        # ----------------------------
+        tk.Label(f, text="Udziały procentowe (suma musi wynosić 100%)").pack(pady=(10, 0))
 
-        self.train_scale = tk.Scale(f, from_=10, to=90, orient=tk.HORIZONTAL, label="Train (%)")
-        self.valid_scale = tk.Scale(f, from_=0, to=90, orient=tk.HORIZONTAL, label="Valid (%)")
+        self.train_scale = tk.Scale(f, from_=0, to=100, orient=tk.HORIZONTAL, label="Train (%)")
+        self.valid_scale = tk.Scale(f, from_=0, to=100, orient=tk.HORIZONTAL, label="Valid (%)")
+        self.test_scale = tk.Scale(f, from_=0, to=100, orient=tk.HORIZONTAL, label="Test (%)")
+
         self.train_scale.set(70)
         self.valid_scale.set(20)
+        self.test_scale.set(10)
+
         self.train_scale.pack()
         self.valid_scale.pack()
+        self.test_scale.pack()
 
         # ----------------------------
         # FILTR ROZDZIELCZOŚCI WEJŚCIOWEJ
@@ -481,6 +562,31 @@ class ImageDownloaderGUI:
             self.png_cb.config(state="normal")
             self.gif_cb.config(state="normal")
 
+    def update_scales(self, changed):
+        """Normalizacja trzech suwaków tak, aby suma wynosiła 100%."""
+        t = self.train_scale.get()
+        v = self.valid_scale.get()
+        s = self.test_scale.get()
+
+        total = t + v + s
+        if total == 0:
+            # zapobiega sytuacji 0/0/0 → ustaw train = 100
+            self.train_scale.set(100)
+            self.valid_scale.set(0)
+            self.test_scale.set(0)
+            return
+
+        # Normalizacja — przeskalowanie wartości do 100%
+        scale_factor = 100 / total
+        t = int(t * scale_factor)
+        v = int(v * scale_factor)
+        s = 100 - t - v  # gwarancja braku błędów zaokrągleń
+
+        # aby nie wywołać zapętlenia update_scales
+        self.train_scale.set(t)
+        self.valid_scale.set(v)
+        self.test_scale.set(s)
+
     def get_allowed_input_formats(self):
         # jeśli wszystkie formaty są dozwolone → filtr WYŁĄCZONY
         if self.allow_all_formats.get():
@@ -627,6 +733,38 @@ class ImageDownloaderGUI:
     # =========================
     def start_download(self):
         self.progress_bar['value'] = 0
+
+        # --- SPRAWDZENIE INTERNETU + JAKOŚCI ---
+        latency, quality = measure_connection_quality()
+
+        if quality == "no_internet":
+            messagebox.showerror(
+                "Brak internetu",
+                "Nie wykryto połączenia z internetem.\nSprawdź połączenie i spróbuj ponownie."
+            )
+            return
+
+        if quality == "bad":
+            resp = messagebox.askyesno(
+                "Słabe połączenie",
+                f"Wykryto słabe połączenie。\n"
+                f"Ping: {latency:.1f} ms.\n"
+                "Przy takim łączu pobieranie może być wolne lub niestabilne.\n\n"
+                "Czy chcesz kontynuować?"
+            )
+            if not resp:
+                return
+
+        elif quality == "medium":
+            resp = messagebox.askyesno(
+                "Średnia jakość połączenia",
+                f"Ping: {latency:.1f} ms.\n"
+                "Pobieranie może chwilami zwalniać.\n"
+                "Kontynuować?"
+            )
+            if not resp:
+                return
+
         query = self.query_entry.get().strip()
         class_name = self.class_entry.get().strip()
         folder = self.folder_path.get().strip()
@@ -648,6 +786,32 @@ class ImageDownloaderGUI:
         # walidacja resize/crop
         resize_size = self.get_target_resize_size_val()
         if resize_size == "error":
+            return
+
+        train_ratio = self.train_scale.get()
+        valid_ratio = self.valid_scale.get()
+        test_ratio = self.test_scale.get()
+
+        total = train_ratio + valid_ratio + test_ratio
+
+        if total != 100:
+            messagebox.showerror(
+                "Błąd podziału",
+                f"Suma udziałów musi wynosić 100%, a wynosi {total}%."
+            )
+            return
+
+        subsets = []
+        if self.use_train.get():
+            subsets.append("train")
+        if self.use_valid.get():
+            subsets.append("valid")
+        if self.use_test.get():
+            subsets.append("test")
+
+        if not subsets:
+            messagebox.showerror("Błąd", "Wybierz co najmniej jeden podzbiór.")
+            self.download_button.config(state="normal")
             return
 
         class_dir = os.path.join(folder, class_name)
@@ -1231,7 +1395,10 @@ class ImageDownloaderGUI:
 
         train_ratio = self.train_scale.get()
         valid_ratio = self.valid_scale.get()
-        test_ratio = 100 - train_ratio - valid_ratio
+        test_ratio = self.test_scale.get()
+
+
+
 
         subsets = []
         if self.use_train.get():
@@ -1241,10 +1408,6 @@ class ImageDownloaderGUI:
         if self.use_test.get():
             subsets.append("test")
 
-        if not subsets:
-            messagebox.showerror("Błąd", "Wybierz co najmniej jeden podzbiór.")
-            self.download_button.config(state="normal")
-            return
 
         split_images(
             tmp_dir,
