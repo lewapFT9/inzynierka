@@ -19,3 +19,7 @@ class TooManyFilesizeFilteredException(Exception):
 class SourceExhaustedException(Exception):
     """Źródło nie zwraca już więcej wyników dla danego zapytania."""
     pass
+
+class DownloadCancelledException(Exception):
+    """Pobieranie przerwane przez użytkownika."""
+    pass

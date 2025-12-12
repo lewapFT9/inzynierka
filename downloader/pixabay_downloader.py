@@ -10,6 +10,7 @@ from exceptions.exceptions import (
     TooManyResolutionFilteredException,
     SourceExhaustedException,
     TooManyFilesizeFilteredException,
+    DownloadCancelledException
 )
 
 MAX_FORMAT_ERRORS = 100
@@ -54,6 +55,7 @@ def download_images_pixabay(
     resolution_filter=None,
     force_output_format=None,
     filesize_filter=None,
+    should_stop=None,
 ):
     os.makedirs(save_dir, exist_ok=True)
 
@@ -64,6 +66,9 @@ def download_images_pixabay(
     filesize_errors = 0
 
     while downloaded < count:
+        if should_stop and should_stop():
+            raise DownloadCancelledException()
+
         response = requests.get(
             "https://pixabay.com/api/",
             params={
@@ -86,6 +91,9 @@ def download_images_pixabay(
             )
 
         for item in hits:
+            if should_stop and should_stop():
+                raise DownloadCancelledException()
+
             try:
                 url = item["largeImageURL"]
                 raw = requests.get(url, timeout=10).content

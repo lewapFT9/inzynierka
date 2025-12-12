@@ -10,6 +10,7 @@ from exceptions.exceptions import (
     TooManyResolutionFilteredException,
     SourceExhaustedException,
     TooManyFilesizeFilteredException,
+    DownloadCancelledException
 )
 
 MAX_FORMAT_ERRORS = 40
@@ -54,6 +55,7 @@ def download_images_google(
     resolution_filter=None,
     force_output_format=None,
     filesize_filter=None,
+    should_stop=None,
 ):
     os.makedirs(save_dir, exist_ok=True)
     downloaded = 0
@@ -64,6 +66,9 @@ def download_images_google(
     filesize_errors = 0
 
     while downloaded < count and start <= 91:
+        if should_stop and should_stop():
+            raise DownloadCancelledException()
+
         response = requests.get(
             "https://www.googleapis.com/customsearch/v1",
             params={
@@ -88,6 +93,9 @@ def download_images_google(
             )
 
         for item in items:
+            if should_stop and should_stop():
+                raise DownloadCancelledException()
+
             try:
                 url = item["link"]
                 raw = requests.get(url, timeout=10).content

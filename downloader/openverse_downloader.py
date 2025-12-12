@@ -10,6 +10,7 @@ from exceptions.exceptions import (
     TooManyResolutionFilteredException,
     SourceExhaustedException,
     TooManyFilesizeFilteredException,
+    DownloadCancelledException
 )
 
 MAX_FORMAT_ERRORS = 100
@@ -56,6 +57,7 @@ def download_images_openverse(
     resolution_filter=None,
     force_output_format=None,
     filesize_filter=None,
+    should_stop=None,
 ):
     os.makedirs(save_dir, exist_ok=True)
 
@@ -67,6 +69,9 @@ def download_images_openverse(
     filesize_errors = 0
 
     while downloaded < count:
+        if should_stop and should_stop():
+            raise DownloadCancelledException()
+
         response = requests.get(
             "https://api.openverse.engineering/v1/images",
             params={
@@ -91,6 +96,9 @@ def download_images_openverse(
             )
 
         for item in results:
+            if should_stop and should_stop():
+                raise DownloadCancelledException()
+
             try:
                 url = item.get("url")
                 if not url:
