@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 
 
 
@@ -13,35 +14,38 @@ class ModeSelectorWindow:
         self.master = master
         self.master.title("INŻYNIERKA – wybór trybu")
 
-        frame = tk.Frame(master, padx=20, pady=20)
-        frame.pack(fill="both", expand=True)
+        W, H = 420, 320
+        self.master.geometry(f"{W}x{H}")
+        self.master.resizable(False, False)
+        self.master.configure(bg="#f4f6fb")
+
+        root = tk.Frame(master, bg="#f4f6fb")
+        root.pack(fill="both", expand=True)
+
+        card = tk.Frame(root, bg="#ffffff", padx=24, pady=24)
+        card.place(relx=0.5, rely=0.5, anchor="center")
 
         tk.Label(
-            frame,
-            text="Wybierz tryb pracy:",
-            font=("Arial", 12, "bold")
-        ).pack(pady=(0, 10))
+            card,
+            text="Wybierz tryb pracy",
+            font=("Segoe UI", 14, "bold"),
+            fg="#1976d2",
+            bg="#ffffff"
+        ).pack(pady=(0, 20))
 
-        tk.Button(
-            frame,
-            text="📥 Pobierz nowy zbiór",
-            height=2,
-            command=self.open_downloader
-        ).pack(fill="x", pady=5)
+        def btn(text, cmd):
+            return ttk.Button(
+                card,
+                text=text,
+                command=cmd
+            )
 
-        tk.Button(
-            frame,
-            text="🖼️ Zmień rozdzielczość istniejącego zbioru",
-            height=2,
-            command=self.open_resize_existing
-        ).pack(fill="x", pady=5)
+        btn("📥 Pobierz nowy zbiór", self.open_downloader).pack(fill="x", pady=6)
+        btn("🖼️ Zmień rozdzielczość istniejącego zbioru", self.open_resize_existing).pack(fill="x", pady=6)
 
-        tk.Button(
-            frame,
-            text="ℹ️ Jak korzystać z aplikacji",
-            height=2,
-            command=self.open_about
-        ).pack(fill="x", pady=5)
+        ttk.Separator(card).pack(fill="x", pady=16)
+
+        btn("ℹ️ Jak korzystać z aplikacji", self.open_about).pack(fill="x")
 
     def reopen(self):
         """Ponownie pokazuje okno wyboru trybu."""

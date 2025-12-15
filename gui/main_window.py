@@ -82,6 +82,41 @@ class ImageDownloaderGUI:
     def __init__(self, master):
         self.master = master
         master.title("INŻYNIERKA")
+
+        # =========================
+        #   WYGLĄD / STAŁY ROZMIAR
+        # =========================
+        self.WINDOW_W = 420
+        self.WINDOW_H = 700
+        self.master.geometry(f"{self.WINDOW_W}x{self.WINDOW_H}")
+        self.master.minsize(self.WINDOW_W, self.WINDOW_H)
+        self.master.maxsize(self.WINDOW_W, self.WINDOW_H)
+        self.master.resizable(False, False)
+
+        # Kolory (spójnie w całej aplikacji)
+        self.C_BG = "#f4f6fb"  # tło okna
+        self.C_CARD = "#ffffff"  # tło "kart"
+        self.C_ACCENT = "#1976d2"  # akcent (nagłówki)
+        self.C_TEXT = "#1f2937"  # tekst
+        self.C_MUTED = "#6b7280"  # tekst pomocniczy
+        self.C_DANGER = "#d32f2f"  # ostrzegawczy
+
+        self.master.configure(bg=self.C_BG)
+
+        # ttk style
+        try:
+            style = ttk.Style()
+            # na Windows "vista", na Linux/Mac różnie – ustawiamy delikatnie
+            style.theme_use(style.theme_use())
+            style.configure("TButton", padding=(10, 6))
+            style.configure("Accent.TButton", padding=(10, 8))
+            style.configure("TProgressbar", thickness=10)
+        except Exception:
+            pass
+
+        # =========================
+        #   STAN / LOGIKA (BEZ ZMIAN)
+        # =========================
         self.source_selector_window = None
         self.stop_download = False
         self.download_in_progress = False
@@ -91,6 +126,7 @@ class ImageDownloaderGUI:
         # flaga formatu docelowego (None = brak wymuszonej konwersji)
         self.force_output_format = None
         self.tmp_dir = None
+
         # dane pobierania
         self.query = None
         self.class_name = None
@@ -110,23 +146,47 @@ class ImageDownloaderGUI:
         # format wyjściowy (konwersja)
         self.force_output_format = None
 
-        # --- SCROLLABLE MAIN FRAME ---
-        self.canvas = tk.Canvas(master)
+        # =========================
+        #   SCROLLABLE MAIN FRAME
+        # =========================
+        self.canvas = tk.Canvas(master, bg=self.C_BG, highlightthickness=0)
         self.scrollbar = tk.Scrollbar(master, orient="vertical", command=self.canvas.yview)
-        self.scrollable_frame = tk.Frame(self.canvas)
+        self.scrollable_frame = tk.Frame(self.canvas, bg=self.C_BG)
 
         self.scrollable_frame.bind(
             "<Configure>",
-            lambda e: self.canvas.configure(
-                scrollregion=self.canvas.bbox("all")
-            )
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
 
-        self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.scrollable_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
+
+        # dopasowanie szerokości wnętrza do canvasa
+        def _sync_width(event):
+            self.canvas.itemconfig(self.canvas_window, width=event.width)
+
+        self.canvas.bind("<Configure>", _sync_width)
+
+        # przewijanie kółkiem myszy (Windows/Linux/macOS)
+        def _on_mousewheel(event):
+            if not self.gui_alive:
+                return
+            # Windows / macOS
+            if hasattr(event, "delta") and event.delta:
+                self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+            else:
+                # Linux (Button-4/Button-5)
+                if event.num == 4:
+                    self.canvas.yview_scroll(-3, "units")
+                elif event.num == 5:
+                    self.canvas.yview_scroll(3, "units")
+
+        self.canvas.bind_all("<MouseWheel>", _on_mousewheel)
+        self.canvas.bind_all("<Button-4>", _on_mousewheel)
+        self.canvas.bind_all("<Button-5>", _on_mousewheel)
 
         self.build_ui()
 
@@ -135,32 +195,72 @@ class ImageDownloaderGUI:
     # =========================
     def build_ui(self):
         f = self.scrollable_frame  # skrót
+
+        # Helper do "kart" – tylko UI (nie dotyka logiki)
+        def card(title: str, subtitle: str = None):
+            outer = tk.Frame(f, bg=self.C_BG)
+            outer.pack(fill="x", padx=12, pady=8)
+
+            box = tk.Frame(outer, bg=self.C_CARD, padx=14, pady=12)
+            box.pack(fill="x")
+
+            tk.Label(
+                box,
+                text=title,
+                font=("Segoe UI", 11, "bold"),
+                fg=self.C_ACCENT,
+                bg=self.C_CARD
+            ).pack(anchor="w")
+
+            if subtitle:
+                tk.Label(
+                    box,
+                    text=subtitle,
+                    font=("Segoe UI", 9),
+                    fg=self.C_MUTED,
+                    bg=self.C_CARD
+                ).pack(anchor="w", pady=(2, 10))
+            else:
+                tk.Frame(box, bg=self.C_CARD, height=10).pack()
+
+            return box
+
         # ----------------------------
-        # POWRÓT DO OKNA WYBORU TRYBU
+        # GÓRA: POWRÓT
         # ----------------------------
-        tk.Button(f, text="⬅ Powrót", command=self.return_to_mode_selector).pack(pady=10)
+        top = tk.Frame(f, bg=self.C_BG)
+        top.pack(fill="x", padx=12, pady=(12, 6))
 
-        tk.Label(f, text="Hasło do wyszukiwania (query):").pack()
-        self.query_entry = tk.Entry(f, width=40)
-        self.query_entry.pack()
+        ttk.Button(top, text="⬅ Powrót", command=self.return_to_mode_selector).pack(fill="x")
 
-        tk.Label(f, text="Liczba obrazów:").pack()
-        self.count_entry = tk.Entry(f, width=10)
-        self.count_entry.pack()
+        # ----------------------------
+        # PODSTAWOWE DANE
+        # ----------------------------
+        c = card("Pobieranie", "Uzupełnij dane wejściowe.")
+        tk.Label(c, text="Hasło do wyszukiwania (query):", bg=self.C_CARD, fg=self.C_TEXT).pack(anchor="w")
+        self.query_entry = tk.Entry(c, width=40)
+        self.query_entry.pack(fill="x", pady=(2, 10))
 
-        tk.Label(f, text="Nazwa klasy (folder):").pack()
-        self.class_entry = tk.Entry(f, width=20)
-        self.class_entry.pack()
+        tk.Label(c, text="Liczba obrazów:", bg=self.C_CARD, fg=self.C_TEXT).pack(anchor="w")
+        self.count_entry = tk.Entry(c, width=10)
+        self.count_entry.pack(fill="x", pady=(2, 10))
 
-        self.select_button = tk.Button(f, text="Wybierz folder docelowy", command=self.choose_folder)
-        self.select_button.pack(pady=5)
+        tk.Label(c, text="Nazwa klasy (folder):", bg=self.C_CARD, fg=self.C_TEXT).pack(anchor="w")
+        self.class_entry = tk.Entry(c, width=20)
+        self.class_entry.pack(fill="x", pady=(2, 10))
+
+        self.select_button = ttk.Button(c, text="Wybierz folder docelowy", command=self.choose_folder)
+        self.select_button.pack(fill="x", pady=(0, 6))
 
         self.folder_path = tk.StringVar()
-        tk.Label(f, textvariable=self.folder_path, fg="gray").pack()
+        tk.Label(c, textvariable=self.folder_path, fg=self.C_MUTED, bg=self.C_CARD).pack(anchor="w")
 
-        tk.Label(f, text="Podział zbioru (train / valid / test)").pack()
+        # ----------------------------
+        # PODZIAŁ ZBIORU
+        # ----------------------------
+        c = card("Podział zbioru", "Wybierz podzbiory i ustaw procenty (suma 100%).")
 
-        tk.Label(f, text="Wybierz podzbiory:").pack()
+        tk.Label(c, text="Wybierz podzbiory:", bg=self.C_CARD, fg=self.C_TEXT).pack(anchor="w")
         self.use_train = tk.BooleanVar(value=True)
         self.use_valid = tk.BooleanVar(value=True)
         self.use_test = tk.BooleanVar(value=True)
@@ -187,50 +287,43 @@ class ImageDownloaderGUI:
             else:
                 self.test_scale.config(state="normal")
 
-        tk.Checkbutton(f, text="train", variable=self.use_train, command=on_subset_toggle).pack()
-        tk.Checkbutton(f, text="valid", variable=self.use_valid, command=on_subset_toggle).pack()
-        tk.Checkbutton(f, text="test", variable=self.use_test, command=on_subset_toggle).pack()
+        tk.Checkbutton(c, text="train", variable=self.use_train, command=on_subset_toggle, bg=self.C_CARD).pack(
+            anchor="w")
+        tk.Checkbutton(c, text="valid", variable=self.use_valid, command=on_subset_toggle, bg=self.C_CARD).pack(
+            anchor="w")
+        tk.Checkbutton(c, text="test", variable=self.use_test, command=on_subset_toggle, bg=self.C_CARD).pack(
+            anchor="w")
 
-        # ----------------------------
-        # TRYB SPLITOWANIA
-        # ----------------------------
-        tk.Label(f, text="Tryb podziału zbioru:").pack(pady=(10, 0))
-
+        tk.Label(c, text="Tryb podziału zbioru:", bg=self.C_CARD, fg=self.C_TEXT).pack(anchor="w", pady=(10, 0))
         self.split_mode = tk.StringVar(value="random")
 
-        tk.Radiobutton(
-            f, text="Losowy (random)", variable=self.split_mode, value="random"
-        ).pack(anchor="w")
+        tk.Radiobutton(c, text="Losowy (random)", variable=self.split_mode, value="random", bg=self.C_CARD).pack(
+            anchor="w")
+        tk.Radiobutton(c, text="Priorytet kolejności (prioritize)", variable=self.split_mode, value="prioritize",
+                       bg=self.C_CARD).pack(anchor="w")
 
-        tk.Radiobutton(
-            f, text="Priorytet kolejności (prioritize)", variable=self.split_mode, value="prioritize"
-        ).pack(anchor="w")
+        tk.Label(c, text="Udziały procentowe:", bg=self.C_CARD, fg=self.C_TEXT).pack(anchor="w", pady=(10, 0))
 
-        # ----------------------------
-        # TRZY SUWAKI: TRAIN / VALID / TEST (bez automatycznej normalizacji)
-        # ----------------------------
-        tk.Label(f, text="Udziały procentowe (suma musi wynosić 100%)").pack(pady=(10, 0))
-
-        self.train_scale = tk.Scale(f, from_=0, to=100, orient=tk.HORIZONTAL, label="Train (%)")
-        self.valid_scale = tk.Scale(f, from_=0, to=100, orient=tk.HORIZONTAL, label="Valid (%)")
-        self.test_scale = tk.Scale(f, from_=0, to=100, orient=tk.HORIZONTAL, label="Test (%)")
+        self.train_scale = tk.Scale(c, from_=0, to=100, orient=tk.HORIZONTAL, label="Train (%)", bg=self.C_CARD)
+        self.valid_scale = tk.Scale(c, from_=0, to=100, orient=tk.HORIZONTAL, label="Valid (%)", bg=self.C_CARD)
+        self.test_scale = tk.Scale(c, from_=0, to=100, orient=tk.HORIZONTAL, label="Test (%)", bg=self.C_CARD)
 
         self.train_scale.set(70)
         self.valid_scale.set(20)
         self.test_scale.set(10)
 
-        self.train_scale.pack()
-        self.valid_scale.pack()
-        self.test_scale.pack()
+        self.train_scale.pack(fill="x", pady=(4, 4))
+        self.valid_scale.pack(fill="x", pady=(4, 4))
+        self.test_scale.pack(fill="x", pady=(4, 0))
 
         # ----------------------------
         # FILTR ROZDZIELCZOŚCI WEJŚCIOWEJ
         # ----------------------------
-        tk.Label(f, text="Filtr rozdzielczości obrazów (WEJŚCIOWYCH):").pack(pady=(10, 0))
+        c = card("Filtr rozdzielczości (wejściowej)", "Ustaw minimalną i/lub maksymalną rozdzielczość obrazów.")
 
         # --- MINIMUM ---
-        min_frame = tk.Frame(f)
-        min_frame.pack()
+        min_frame = tk.Frame(c, bg=self.C_CARD)
+        min_frame.pack(fill="x")
 
         self.min_width_var = tk.StringVar(value="")
         self.min_height_var = tk.StringVar(value="")
@@ -240,20 +333,21 @@ class ImageDownloaderGUI:
             min_frame,
             text="Brak minimalnej",
             variable=self.no_min_resolution,
-            command=self.update_resolution_fields
-        ).grid(row=0, column=0, sticky="w")
+            command=self.update_resolution_fields,
+            bg=self.C_CARD
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
 
-        tk.Label(min_frame, text="Min szerokość:").grid(row=1, column=0, sticky="e")
+        tk.Label(min_frame, text="Min szerokość:", bg=self.C_CARD).grid(row=1, column=0, sticky="e", padx=5, pady=2)
         self.min_width_entry = tk.Entry(min_frame, textvariable=self.min_width_var, width=8)
-        self.min_width_entry.grid(row=1, column=1)
+        self.min_width_entry.grid(row=1, column=1, sticky="w")
 
-        tk.Label(min_frame, text="Min wysokość:").grid(row=2, column=0, sticky="e")
+        tk.Label(min_frame, text="Min wysokość:", bg=self.C_CARD).grid(row=2, column=0, sticky="e", padx=5, pady=2)
         self.min_height_entry = tk.Entry(min_frame, textvariable=self.min_height_var, width=8)
-        self.min_height_entry.grid(row=2, column=1)
+        self.min_height_entry.grid(row=2, column=1, sticky="w")
 
         # --- MAKSIMUM ---
-        max_frame = tk.Frame(f)
-        max_frame.pack(pady=(5, 0))
+        max_frame = tk.Frame(c, bg=self.C_CARD)
+        max_frame.pack(fill="x", pady=(10, 0))
 
         self.max_width_var = tk.StringVar(value="")
         self.max_height_var = tk.StringVar(value="")
@@ -263,26 +357,27 @@ class ImageDownloaderGUI:
             max_frame,
             text="Brak maksymalnej",
             variable=self.no_max_resolution,
-            command=self.update_resolution_fields
-        ).grid(row=0, column=0, sticky="w")
+            command=self.update_resolution_fields,
+            bg=self.C_CARD
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
 
-        tk.Label(max_frame, text="Max szerokość:").grid(row=1, column=0, sticky="e")
+        tk.Label(max_frame, text="Max szerokość:", bg=self.C_CARD).grid(row=1, column=0, sticky="e", padx=5, pady=2)
         self.max_width_entry = tk.Entry(max_frame, textvariable=self.max_width_var, width=8)
-        self.max_width_entry.grid(row=1, column=1)
+        self.max_width_entry.grid(row=1, column=1, sticky="w")
 
-        tk.Label(max_frame, text="Max wysokość:").grid(row=2, column=0, sticky="e")
+        tk.Label(max_frame, text="Max wysokość:", bg=self.C_CARD).grid(row=2, column=0, sticky="e", padx=5, pady=2)
         self.max_height_entry = tk.Entry(max_frame, textvariable=self.max_height_var, width=8)
-        self.max_height_entry.grid(row=2, column=1)
+        self.max_height_entry.grid(row=2, column=1, sticky="w")
 
         self.update_resolution_fields()
 
         # ----------------------------
         # FILTR ROZMIARU PLIKU (MB)
         # ----------------------------
-        tk.Label(f, text="Filtr rozmiaru pliku (MB):").pack(pady=(10, 0))
+        c = card("Filtr rozmiaru pliku", "Ustaw minimalny i/lub maksymalny rozmiar pliku (w MB).")
 
-        filesize_frame = tk.Frame(f)
-        filesize_frame.pack()
+        filesize_frame = tk.Frame(c, bg=self.C_CARD)
+        filesize_frame.pack(fill="x")
 
         self.no_min_filesize = tk.BooleanVar(value=True)
         self.no_max_filesize = tk.BooleanVar(value=True)
@@ -294,73 +389,73 @@ class ImageDownloaderGUI:
             filesize_frame,
             text="Brak minimalnej",
             variable=self.no_min_filesize,
-            command=lambda: self.update_filesize_fields()
-        ).grid(row=0, column=0, sticky="w")
+            command=lambda: self.update_filesize_fields(),
+            bg=self.C_CARD
+        ).grid(row=0, column=0, columnspan=2, sticky="w")
 
-        tk.Label(filesize_frame, text="Min (MB):").grid(row=1, column=0, sticky="e")
+        tk.Label(filesize_frame, text="Min (MB):", bg=self.C_CARD).grid(row=1, column=0, sticky="e", padx=5, pady=2)
         self.min_filesize_entry = tk.Entry(filesize_frame, textvariable=self.min_filesize_var, width=8)
-        self.min_filesize_entry.grid(row=1, column=1)
+        self.min_filesize_entry.grid(row=1, column=1, sticky="w")
 
         tk.Checkbutton(
             filesize_frame,
             text="Brak maksymalnej",
             variable=self.no_max_filesize,
-            command=lambda: self.update_filesize_fields()
-        ).grid(row=2, column=0, sticky="w")
+            command=lambda: self.update_filesize_fields(),
+            bg=self.C_CARD
+        ).grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
 
-        tk.Label(filesize_frame, text="Max (MB):").grid(row=3, column=0, sticky="e")
+        tk.Label(filesize_frame, text="Max (MB):", bg=self.C_CARD).grid(row=3, column=0, sticky="e", padx=5, pady=2)
         self.max_filesize_entry = tk.Entry(filesize_frame, textvariable=self.max_filesize_var, width=8)
-        self.max_filesize_entry.grid(row=3, column=1)
+        self.max_filesize_entry.grid(row=3, column=1, sticky="w")
 
         self.update_filesize_fields()
 
         # ----------------------------
         # SCALING / CROP
         # ----------------------------
-        tk.Label(f, text="Zmiana rozdzielczości obrazów:").pack(pady=(10, 0))
+        c = card("Zmiana rozdzielczości (wyjściowej)", "Resize lub crop do zadanych wymiarów.")
 
         self.resize_enabled = tk.BooleanVar(value=True)
         tk.Checkbutton(
-            f,
+            c,
             text="Włącz skalowanie",
             variable=self.resize_enabled,
-            command=self.update_resize_fields
-        ).pack()
+            command=self.update_resize_fields,
+            bg=self.C_CARD
+        ).pack(anchor="w")
 
         self.method_var = tk.StringVar(value="resize")
 
-        # przechowujemy referencje do radiobuttonów, aby móc zmieniać ich stan
         self.resize_radio_resize = tk.Radiobutton(
-            f, text="Zmień rozmiar", variable=self.method_var, value="resize"
+            c, text="Zmień rozmiar", variable=self.method_var, value="resize", bg=self.C_CARD
         )
-        self.resize_radio_resize.pack()
+        self.resize_radio_resize.pack(anchor="w")
 
         self.resize_radio_crop = tk.Radiobutton(
-            f, text="Wytnij środek", variable=self.method_var, value="crop"
+            c, text="Wytnij środek", variable=self.method_var, value="crop", bg=self.C_CARD
         )
-        self.resize_radio_crop.pack()
+        self.resize_radio_crop.pack(anchor="w")
 
-        size_frame = tk.Frame(f)
-        size_frame.pack(pady=5)
+        size_frame = tk.Frame(c, bg=self.C_CARD)
+        size_frame.pack(fill="x", pady=8)
 
-        tk.Label(size_frame, text="Szerokość:").grid(row=0, column=0, padx=5, sticky="e")
+        tk.Label(size_frame, text="Szerokość:", bg=self.C_CARD).grid(row=0, column=0, padx=5, sticky="e")
         self.width_entry = tk.Entry(size_frame, width=6)
         self.width_entry.insert(0, "224")
-        self.width_entry.grid(row=0, column=1)
+        self.width_entry.grid(row=0, column=1, sticky="w")
 
-        tk.Label(size_frame, text="Wysokość:").grid(row=0, column=2, padx=5, sticky="e")
+        tk.Label(size_frame, text="Wysokość:", bg=self.C_CARD).grid(row=0, column=2, padx=5, sticky="e")
         self.height_entry = tk.Entry(size_frame, width=6)
         self.height_entry.insert(0, "224")
-        self.height_entry.grid(row=0, column=3)
+        self.height_entry.grid(row=0, column=3, sticky="w")
 
-        # wywołanie inicjalne — ustawi odpowiedni stan pól
         self.update_resize_fields()
-
 
         # ----------------------------
         # FORMATY WEJŚCIOWE
         # ----------------------------
-        tk.Label(f, text="Dozwolone formaty wejściowe:").pack(pady=(10, 0))
+        c = card("Formaty wejściowe", "Wybierz dozwolone formaty obrazów.")
 
         self.allow_all_formats = tk.BooleanVar(value=True)
         self.allow_jpg = tk.BooleanVar(value=True)
@@ -368,51 +463,60 @@ class ImageDownloaderGUI:
         self.allow_gif = tk.BooleanVar(value=True)
 
         self.jpg_cb = tk.Checkbutton(
-            f,
+            c,
             text="JPG / JPEG",
             variable=self.allow_jpg,
-            command=self.update_format_checkboxes
+            command=self.update_format_checkboxes,
+            bg=self.C_CARD
         )
         self.jpg_cb.pack(anchor="w")
 
         self.png_cb = tk.Checkbutton(
-            f,
+            c,
             text="PNG",
             variable=self.allow_png,
-            command=self.update_format_checkboxes
+            command=self.update_format_checkboxes,
+            bg=self.C_CARD
         )
         self.png_cb.pack(anchor="w")
 
         self.gif_cb = tk.Checkbutton(
-            f,
+            c,
             text="GIF",
             variable=self.allow_gif,
-            command=self.update_format_checkboxes
+            command=self.update_format_checkboxes,
+            bg=self.C_CARD
         )
         self.gif_cb.pack(anchor="w")
 
         self.all_cb = tk.Checkbutton(
-            f,
+            c,
             text="Wszystkie formaty dozwolone",
             variable=self.allow_all_formats,
-            command=self.update_format_checkboxes
+            command=self.update_format_checkboxes,
+            bg=self.C_CARD
         )
-        self.all_cb.pack(anchor="w")
+        self.all_cb.pack(anchor="w", pady=(6, 0))
 
         self.update_format_checkboxes()
 
         # ----------------------------
         # PROGRESS + START
         # ----------------------------
+        c = card("Start", "Kliknij, aby rozpocząć pobieranie.")
+
         self.progress = tk.IntVar()
-        self.progress_bar = ttk.Progressbar(f, orient="horizontal", length=300, mode="determinate")
-        self.progress_bar.pack(pady=10)
+        self.progress_bar = ttk.Progressbar(c, orient="horizontal", length=300, mode="determinate")
+        self.progress_bar.pack(fill="x", pady=(0, 10))
 
-        self.download_button = ttk.Button(f, text="Pobierz obrazy", command=self.start_download)
-        self.download_button.pack(pady=10)
+        self.download_button = ttk.Button(c, text="Pobierz obrazy", command=self.start_download)
+        self.download_button.pack(fill="x", pady=(0, 8))
 
-        self.stop_button = ttk.Button(f, text="⛔ Przerwij pobieranie", command=self.request_stop_download)
-        self.stop_button.pack(pady=5)
+        self.stop_button = ttk.Button(c, text="⛔ Przerwij pobieranie", command=self.request_stop_download)
+        self.stop_button.pack(fill="x")
+
+        # mały odstęp na koniec, żeby dało się ładnie doscrollować
+        tk.Frame(f, bg=self.C_BG, height=20).pack()
 
     # =========================
     #   FORMATY I ROZDZIELCZOŚĆ
@@ -530,26 +634,64 @@ class ImageDownloaderGUI:
 
         # --- MIN ---
         if not self.no_min_filesize.get():  # jeśli pole aktywne
-            if not self.min_filesize_var.get().strip():
+            raw = self.min_filesize_var.get().strip()
+            if not raw:
                 if self.gui_alive:
-                    self.master.after(0, lambda: messagebox.showerror("Błąd danych", "Minimalna waga (MB) nie może być pusta."))
+                    self.master.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Błąd danych",
+                            "Minimalna waga (MB) nie może być pusta."
+                        )
+                    )
                 return "error"
 
-            min_mb = self.validate_positive_int(self.min_filesize_entry, "Minimalna waga (MB)")
-            if min_mb == "error":
+            try:
+                raw = raw.replace(",", ".")
+                min_mb = float(raw)
+                if min_mb <= 0:
+                    raise ValueError
+            except ValueError:
+                if self.gui_alive:
+                    self.master.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Błąd danych",
+                            "Minimalna waga (MB) musi być dodatnią liczbą (np. 0.5)."
+                        )
+                    )
                 return "error"
 
             result["min_mb"] = min_mb
 
         # --- MAX ---
         if not self.no_max_filesize.get():  # jeśli pole aktywne
-            if not self.max_filesize_var.get().strip():
+            raw = self.max_filesize_var.get().strip()
+            if not raw:
                 if self.gui_alive:
-                    self.master.after(0, lambda: messagebox.showerror("Błąd danych", "Maksymalna waga (MB) nie może być pusta."))
+                    self.master.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Błąd danych",
+                            "Maksymalna waga (MB) nie może być pusta."
+                        )
+                    )
                 return "error"
 
-            max_mb = self.validate_positive_int(self.max_filesize_entry, "Maksymalna waga (MB)")
-            if max_mb == "error":
+            try:
+                raw = raw.replace(",", ".")
+                max_mb = float(raw)
+                if max_mb <= 0:
+                    raise ValueError
+            except ValueError:
+                if self.gui_alive:
+                    self.master.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Błąd danych",
+                            "Maksymalna waga (MB) musi być dodatnią liczbą (np. 2.5)."
+                        )
+                    )
                 return "error"
 
             result["max_mb"] = max_mb
@@ -558,7 +700,13 @@ class ImageDownloaderGUI:
         if min_mb is not None and max_mb is not None:
             if max_mb <= min_mb:
                 if self.gui_alive:
-                    self.master.after(0, lambda: messagebox.showerror("Błąd danych", "Maksymalna waga (MB) musi być większa niż minimalna."))
+                    self.master.after(
+                        0,
+                        lambda: messagebox.showerror(
+                            "Błąd danych",
+                            "Maksymalna waga (MB) musi być większa niż minimalna."
+                        )
+                    )
                 return "error"
 
         if not result:

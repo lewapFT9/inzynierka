@@ -195,7 +195,7 @@ def download_images_pixabay(
                     continue
 
                 final_ext = (force_output_format or ext).lower()
-                filename = os.path.join(save_dir, f"{start_index + downloaded + 1}.{final_ext}")
+                filename = os.path.join(save_dir, f"{start_index + downloaded}.{final_ext}")
 
                 if final_ext in ("jpg", "jpeg"):
                     img = img.convert("RGB")

@@ -1,4 +1,5 @@
 import tkinter as tk
+from tkinter import ttk
 from tkinter import filedialog, messagebox
 import os
 from resizer.image_resizer import apply_resize_to_folder2
@@ -9,34 +10,53 @@ class ResizeExistingWindow:
 
     def __init__(self, master):
         self.master = master
+        self.master.title("INŻYNIERKA – zmiana rozdzielczości")
+        self.master.geometry("420x360")
+        self.master.resizable(False, False)
+        self.master.configure(bg="#f4f6fb")
 
+        root = tk.Frame(master, bg="#f4f6fb")
+        root.pack(fill="both", expand=True)
 
-        frame = tk.Frame(master, padx=20, pady=20)
-        frame.pack(fill="both", expand=True)
-        tk.Button(frame, text="⬅ Powrót", command=self.return_to_mode_selector).pack(pady=10)
+        card = tk.Frame(root, bg="#ffffff", padx=20, pady=20)
+        card.place(relx=0.5, rely=0.5, anchor="center")
 
-        tk.Label(frame, text="Wybierz folder istniejącego zbioru:").pack()
+        ttk.Button(card, text="⬅ Powrót", command=self.return_to_mode_selector).pack(fill="x", pady=(0, 10))
 
-        tk.Button(
-            frame, text="Wybierz folder", command=self.select_folder
-        ).pack(pady=5)
+        tk.Label(
+            card,
+            text="Zmiana rozdzielczości istniejącego zbioru",
+            font=("Segoe UI", 12, "bold"),
+            fg="#1976d2",
+            bg="#ffffff"
+        ).pack(pady=(0, 15))
+
+        tk.Label(card, text="Folder zbioru:", bg="#ffffff").pack(anchor="w")
+        ttk.Button(card, text="Wybierz folder", command=self.select_folder).pack(fill="x", pady=5)
 
         self.folder_var = tk.StringVar(value="")
-        tk.Label(frame, textvariable=self.folder_var, fg="gray").pack()
+        tk.Label(card, textvariable=self.folder_var, fg="#6b7280", bg="#ffffff").pack(anchor="w", pady=(0, 10))
 
-        tk.Label(frame, text="Docelowa szerokość:").pack(pady=(10, 0))
-        self.w_entry = tk.Entry(frame, width=10)
+        size = tk.Frame(card, bg="#ffffff")
+        size.pack(pady=10)
+
+        tk.Label(size, text="Szerokość:", bg="#ffffff").grid(row=0, column=0, sticky="e", padx=5)
+        self.w_entry = tk.Entry(size, width=8)
         self.w_entry.insert(0, "224")
-        self.w_entry.pack()
+        self.w_entry.grid(row=0, column=1)
 
-        tk.Label(frame, text="Docelowa wysokość:").pack()
-        self.h_entry = tk.Entry(frame, width=10)
+        tk.Label(size, text="Wysokość:", bg="#ffffff").grid(row=1, column=0, sticky="e", padx=5)
+        self.h_entry = tk.Entry(size, width=8)
         self.h_entry.insert(0, "224")
-        self.h_entry.pack()
+        self.h_entry.grid(row=1, column=1)
 
-        tk.Button(
-            frame, text="Rozpocznij skalowanie", command=self.start_resize
-        ).pack(pady=20)
+        ttk.Separator(card).pack(fill="x", pady=15)
+
+        ttk.Button(
+            card,
+            text="▶ Rozpocznij skalowanie",
+            command=self.start_resize
+        ).pack(fill="x")
 
     def return_to_mode_selector(self):
         self.master.destroy()

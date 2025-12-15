@@ -1,36 +1,96 @@
 import tkinter as tk
+from tkinter import ttk
 from PIL import Image, ImageTk
 import os
 from functools import partial
 
 class CleanerWindow:
+
+    def _on_mousewheel(self, event):
+        # Windows / macOS
+        if event.delta:
+            self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # Linux
+        elif event.num == 4:
+            self.canvas.yview_scroll(-1, "units")
+        elif event.num == 5:
+            self.canvas.yview_scroll(1, "units")
+
+
     def __init__(self, folder_path, on_close=None):
         self.folder_path = folder_path
         self.on_close = on_close
         self.selected_files = set()
 
         self.window = tk.Toplevel()
-        self.window.title(" Ręczne czyszczenie obrazów")
-        self.window.geometry("600x600")
+        self.window.title("INŻYNIERKA – ręczne czyszczenie obrazów")
+        self.window.geometry("700x600")
+        self.window.resizable(False, False)
+        self.window.protocol("WM_DELETE_WINDOW", self._on_window_close)
 
-        self.canvas = tk.Canvas(self.window)
-        self.scrollbar = tk.Scrollbar(self.window, orient="vertical", command=self.canvas.yview)
-        self.scroll_frame = tk.Frame(self.canvas)
+        BG = "#f5f5f5"
+        CARD = "#ffffff"
+
+        # ===== ROOT =====
+        root_frame = tk.Frame(self.window, bg=BG)
+        root_frame.pack(fill="both", expand=True)
+
+        # ===== HEADER =====
+        header = tk.Frame(root_frame, bg=BG, padx=20, pady=15)
+        header.pack(fill="x")
+
+        tk.Label(
+            header,
+            text="Ręczne czyszczenie obrazów",
+            font=("Segoe UI", 14, "bold"),
+            bg=BG
+        ).pack(anchor="w")
+
+        tk.Label(
+            header,
+            text="Zaznacz obrazy do usunięcia i zatwierdź na dole",
+            font=("Segoe UI", 10),
+            fg="#555",
+            bg=BG
+        ).pack(anchor="w", pady=(4, 0))
+
+        ttk.Separator(root_frame).pack(fill="x", padx=20, pady=(0, 10))
+
+        # ===== CONTENT (SCROLL) =====
+        content_frame = tk.Frame(root_frame, bg=BG)
+        content_frame.pack(fill="both", expand=True, padx=20)
+
+        self.canvas = tk.Canvas(content_frame, bg=BG, highlightthickness=0)
+        self.scrollbar = ttk.Scrollbar(content_frame, orient="vertical", command=self.canvas.yview)
+
+        self.scroll_frame = tk.Frame(self.canvas, bg=CARD, padx=15, pady=15)
 
         self.canvas.create_window((0, 0), window=self.scroll_frame, anchor="nw")
         self.canvas.configure(yscrollcommand=self.scrollbar.set)
 
-        self.scroll_frame.bind("<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all")))
-
+        self.scroll_frame.bind(
+            "<Configure>",
+            lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        )
+        self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._on_mousewheel))
+        self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
         self.canvas.pack(side="left", fill="both", expand=True)
         self.scrollbar.pack(side="right", fill="y")
 
-        self.bottom_frame = tk.Frame(self.window)
-        self.bottom_frame.pack(fill="x", pady=10)
+        # ===== BOTTOM BAR =====
+        bottom = tk.Frame(root_frame, bg=BG, padx=20, pady=15)
+        bottom.pack(fill="x")
 
-        self.delete_button = tk.Button(self.bottom_frame, text="🗑️ Usuń zaznaczone", command=self.delete_selected)
-        self.delete_button.pack()
+        ttk.Separator(bottom).pack(fill="x", pady=(0, 12))
 
+        self.delete_button = ttk.Button(
+            bottom,
+            text="🗑️ Usuń zaznaczone obrazy",
+            command=self.delete_selected
+        )
+        self.delete_button.pack(anchor="e")
+
+        # ===== LOAD =====
         self.load_images()
 
     def load_images(self):
@@ -77,3 +137,13 @@ class CleanerWindow:
             self.on_close(self.folder_path)
 
         self.window.destroy()
+
+    def _on_window_close(self):
+        """
+        Zamknięcie cleanera krzyżykiem:
+        zachowuje się TAK SAMO jak zakończenie ręcznego czyszczenia
+        """
+        if self.on_close:
+            self.on_close(None)
+        self.window.destroy()
+
