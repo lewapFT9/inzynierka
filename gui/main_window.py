@@ -1739,12 +1739,12 @@ class ImageDownloaderGUI:
                 CleanerWindow(tmp_dir, lambda _: self.check_and_continue(tmp_dir, query, expected_count, source))
             else:
                 self.process_resize_and_split(tmp_dir)
-                self.bind_mousewheel()
         if self.gui_alive:
             self.master.after(0, ask)
-        self.bind_mousewheel()
 
     def check_and_continue(self, tmp_dir, query, expected_count, source):
+        utils.renumber_images(tmp_dir)
+        self.bind_mousewheel()
         current_files = [
             f for f in os.listdir(tmp_dir)
             if f.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
