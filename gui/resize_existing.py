@@ -21,7 +21,8 @@ class ResizeExistingWindow:
         card = tk.Frame(root, bg="#ffffff", padx=20, pady=20)
         card.place(relx=0.5, rely=0.5, anchor="center")
 
-        ttk.Button(card, text="⬅ Powrót", command=self.return_to_mode_selector).pack(fill="x", pady=(0, 10))
+        self.back_button = ttk.Button(card, text="⬅ Powrót", command=self.return_to_mode_selector)
+        self.back_button.pack(fill="x", pady=(0, 10))
 
         tk.Label(
             card,
@@ -83,7 +84,8 @@ class ResizeExistingWindow:
         except ValueError:
             messagebox.showerror("Błąd", "Wymiary muszą być liczbami.")
             return
-
+        self.back_button.config(state="disabled")
         apply_resize_to_folder2(folder, (w, h), method="resize")
 
         messagebox.showinfo("Sukces", "Skalowanie zakończone.")
+        self.back_button.config(state="normal")

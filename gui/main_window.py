@@ -231,7 +231,8 @@ class ImageDownloaderGUI:
         top = tk.Frame(f, bg=self.C_BG)
         top.pack(fill="x", padx=12, pady=(12, 6))
 
-        ttk.Button(top, text="⬅ Powrót", command=self.return_to_mode_selector).pack(fill="x")
+        self.back_button =  ttk.Button(top, text="⬅ Powrót", command=self.return_to_mode_selector)
+        self.back_button.pack(fill="x", pady=10)
 
         # ----------------------------
         # PODSTAWOWE DANE
@@ -973,8 +974,10 @@ class ImageDownloaderGUI:
     def start_download(self):
         if self.gui_alive:
             self.master.after(0, lambda: self.progress_bar.config(value=0))
+            self.back_button.config(state="disabled")
         self.stop_download = False
         self.download_in_progress = True
+
 
         # ======================================================
         # INTERNET CHECK W WĄTKU (JEDYNA ZMIANA)
@@ -1076,6 +1079,7 @@ class ImageDownloaderGUI:
                     if self.gui_alive:
                         messagebox.showerror("Błąd", "Wybierz co najmniej jeden podzbiór.")
                     self.download_button.config(state="normal")
+                    self.back_button.config(state="normal")
                     self.download_in_progress = False
                     return
 
@@ -1100,10 +1104,12 @@ class ImageDownloaderGUI:
                                     f"Nie można usunąć folderu:\n{e}"
                                 )
                             self.download_button.config(state="normal")
+                            self.back_button.config(state="normal")
                             self.download_in_progress = False
                             return
                     else:
                         self.download_button.config(state="normal")
+                        self.back_button.config(state="normal")
                         self.download_in_progress = False
                         return
 
@@ -1131,6 +1137,7 @@ class ImageDownloaderGUI:
 
                 self.force_output_format = None
                 self.download_button.config(state="disabled")
+                self.back_button.config(state="disabled")
 
                 self.available_sources = [
                     "google", "pexels", "pixabay", "unsplash", "openverse"
@@ -1147,6 +1154,7 @@ class ImageDownloaderGUI:
                 def on_cancel_source():
                     self.source_selector_window = None
                     self.download_button.config(state="normal")
+                    self.back_button.config(state="normal")
                     self.download_in_progress = False
 
                 if self.source_selector_window is not None and self.source_selector_window.winfo_exists():
@@ -1244,6 +1252,7 @@ class ImageDownloaderGUI:
                 ))
             if self.gui_alive:
                 self.master.after(0, lambda: self.download_button.config(state="normal"))
+                self.master.after(0, lambda: self.back_button.config(state="normal"))
                 self.master.after(0, lambda: self.progress_bar.config(value=0))
             return
 
@@ -1295,6 +1304,7 @@ class ImageDownloaderGUI:
             if self.gui_alive:
                 self.master.after(0, lambda: messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane."))
             self.download_button.config(state="normal")
+            self.back_button.config(state="normal")
             return
 
         tmp_dir = self.tmp_dir
@@ -1392,6 +1402,7 @@ class ImageDownloaderGUI:
                 if self.gui_alive:
                     self.master.after(0, lambda: messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane."))
                 self.download_button.config(state="normal")
+                self.back_button.config(state="normal")
                 return
 
             tmp_dir = self.tmp_dir
@@ -1413,6 +1424,7 @@ class ImageDownloaderGUI:
         else:
             # ANULUJ
             self.download_button.config(state="normal")
+            self.back_button.config(state="normal")
 
     def handle_resolution_filtered(self, source, reason):
         msg = (
@@ -1447,6 +1459,7 @@ class ImageDownloaderGUI:
                 if self.gui_alive:
                     self.master.after(0, lambda: messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane."))
                 self.download_button.config(state="normal")
+                self.back_button.config(state="normal")
                 return
 
             tmp_dir = self.tmp_dir
@@ -1468,6 +1481,7 @@ class ImageDownloaderGUI:
         else:
             # ANULUJ
             self.download_button.config(state="normal")
+            self.back_button.config(state="normal")
 
     def handle_filesize_filtered(self, source, reason):
         msg = (
@@ -1504,6 +1518,7 @@ class ImageDownloaderGUI:
                 if self.gui_alive:
                     self.master.after(0, lambda: messagebox.showwarning("Brak źródeł", "Wszystkie źródła zostały wykorzystane."))
                 self.download_button.config(state="normal")
+                self.back_button.config(state="normal")
                 return
 
             tmp_dir = self.tmp_dir
@@ -1524,6 +1539,7 @@ class ImageDownloaderGUI:
                 ))
         else:
             self.download_button.config(state="normal")
+            self.back_button.config(state="normal")
 
     # =========================
     #   WYBÓR ŹRÓDŁA I RESUME
@@ -1664,6 +1680,7 @@ class ImageDownloaderGUI:
                 "Pobieranie zostało przerwane przez użytkownika."
                 ))
                 self.master.after(0, lambda: self.download_button.config(state="normal"))
+                self.master.after(0, lambda: self.back_button.config(state="normal"))
                 self.master.after(0, lambda: self.progress_bar.config(value=0))
                 self.download_in_progress = False
                 self.stop_download = False
@@ -1686,6 +1703,7 @@ class ImageDownloaderGUI:
                     "Wszystkie źródła zostały wykorzystane."
                     ))
                     self.master.after(0, lambda: self.download_button.config(state="normal"))
+                    self.master.after(0, lambda: self.back_button.config(state="normal"))
                 return
             if self.gui_alive:
                 self.master.after(0, lambda: SourceSelector(
@@ -1704,6 +1722,13 @@ class ImageDownloaderGUI:
     # =========================
     #   CLEAN / RESIZE / SPLIT
     # =========================
+
+    def bind_mousewheel(self):
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_mousewheel(self, event):
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
     def prompt_next_action(self, tmp_dir, query, expected_count, source):
         def ask():
             if self.gui_alive:
@@ -1714,8 +1739,10 @@ class ImageDownloaderGUI:
                 CleanerWindow(tmp_dir, lambda _: self.check_and_continue(tmp_dir, query, expected_count, source))
             else:
                 self.process_resize_and_split(tmp_dir)
+                self.bind_mousewheel()
         if self.gui_alive:
             self.master.after(0, ask)
+        self.bind_mousewheel()
 
     def check_and_continue(self, tmp_dir, query, expected_count, source):
         current_files = [
@@ -1753,6 +1780,7 @@ class ImageDownloaderGUI:
                 if self.gui_alive:
                     self.master.after(0, lambda: messagebox.showerror("Błąd", f"Nie udało się przeskalować: {e}"))
                 self.download_button.config(state="normal")
+                self.back_button.config(state="normal")
                 return
 
         folder = self.folder_path.get()
