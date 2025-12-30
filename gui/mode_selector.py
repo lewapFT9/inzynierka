@@ -4,15 +4,10 @@ from tkinter import ttk
 
 
 class ModeSelectorWindow:
-    """
-    Ekran startowy aplikacji:
-    1. Pobieranie nowego zbioru
-    2. Zmiana rozdzielczości istniejącego zbioru
-    """
 
     def __init__(self, master: tk.Tk):
         self.master = master
-        self.master.title("INŻYNIERKA – wybór trybu")
+        self.master.title("PRACA INŻYNIERSKA – wybór trybu")
 
         W, H = 420, 320
         self.master.geometry(f"{W}x{H}")
@@ -40,12 +35,12 @@ class ModeSelectorWindow:
                 command=cmd
             )
 
-        btn("📥 Pobierz nowy zbiór", self.open_downloader).pack(fill="x", pady=6)
-        btn("🖼️ Zmień rozdzielczość istniejącego zbioru", self.open_resize_existing).pack(fill="x", pady=6)
+        btn("Pobierz nowy zbiór", self.open_downloader).pack(fill="x", pady=6)
+        btn("Zmień rozdzielczość istniejącego zbioru", self.open_resize_existing).pack(fill="x", pady=6)
 
         ttk.Separator(card).pack(fill="x", pady=16)
 
-        btn("ℹ️ Jak korzystać z aplikacji", self.open_about).pack(fill="x")
+        btn("Jak korzystać z aplikacji", self.open_about).pack(fill="x")
 
     def reopen(self):
         """Ponownie pokazuje okno wyboru trybu."""
@@ -61,7 +56,7 @@ class ModeSelectorWindow:
         from gui.main_window import ImageDownloaderGUI
 
         self._clear_root()
-        self.master.title("INŻYNIERKA – pobieranie zbioru")
+        self.master.title("PRACA INŻYNIERSKA – pobieranie zbioru")
         self.master.geometry("350x800")
         ImageDownloaderGUI(self.master)
 
@@ -69,7 +64,7 @@ class ModeSelectorWindow:
         from gui.resize_existing import ResizeExistingWindow
         """Uruchamia GUI zmiany rozdzielczości istniejącego zbioru."""
         self._clear_root()
-        self.master.title("INŻYNIERKA – zmiana rozdzielczości")
+        self.master.title("PRACA INŻYNIERSKA – zmiana rozdzielczości")
         ResizeExistingWindow(self.master)
 
     def open_about(self):
@@ -90,14 +85,14 @@ class ModeSelectorWindow:
 
         info_text = (
             "1. Wybierz tryb pracy na ekranie startowym.\n\n"
-            "📥 Pobierz nowy zbiór:\n"
+            "  Pobierz nowy zbiór:\n"
             "– wpisz hasło wyszukiwania\n"
             "– wybierz folder docelowy\n"
             "– ustaw filtry i podział zbioru\n"
             "– rozpocznij pobieranie\n\n"
-            "🖼️ Zmień rozdzielczość istniejącego zbioru:\n"
+            "2. Zmień rozdzielczość istniejącego zbioru:\n"
             "– wybierz folder ze zdjęciami\n"
-            "– ustaw rozmiar docelowy\n"
+            "– ustaw rozmiar docelowy\n\n"
             "W każdej chwili możesz przerwać pobieranie.\n"
             "Aplikacja sprawdza połączenie z internetem\n"
             "i zabezpiecza dane przed nadpisaniem."

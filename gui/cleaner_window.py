@@ -23,7 +23,7 @@ class CleanerWindow:
         self.selected_files = set()
 
         self.window = tk.Toplevel()
-        self.window.title("INŻYNIERKA – ręczne czyszczenie obrazów")
+        self.window.title("PRACA INŻYNIERSKA – ręczne czyszczenie obrazów")
         self.window.geometry("700x600")
         self.window.resizable(False, False)
         self.window.protocol("WM_DELETE_WINDOW", self._on_window_close)
@@ -85,7 +85,7 @@ class CleanerWindow:
 
         self.delete_button = ttk.Button(
             bottom,
-            text="🗑️ Usuń zaznaczone obrazy",
+            text="Usuń zaznaczone obrazy",
             command=self.delete_selected
         )
         self.delete_button.pack(anchor="e")
@@ -102,7 +102,7 @@ class CleanerWindow:
             path = os.path.join(self.folder_path, fname)
             try:
                 img = Image.open(path)
-                img.thumbnail((100, 100))
+                img.thumbnail((200, 200))
                 tk_img = ImageTk.PhotoImage(img)
                 label = tk.Label(self.scroll_frame, image=tk_img, bd=2, relief="solid", highlightthickness=0)
                 label.image = tk_img

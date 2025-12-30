@@ -10,7 +10,7 @@ class ResizeExistingWindow:
 
     def __init__(self, master):
         self.master = master
-        self.master.title("INŻYNIERKA – zmiana rozdzielczości")
+        self.master.title("PRACA INŻYNIERSKA – zmiana rozdzielczości")
         self.master.geometry("420x360")
         self.master.resizable(False, False)
         self.master.configure(bg="#f4f6fb")
@@ -21,7 +21,7 @@ class ResizeExistingWindow:
         card = tk.Frame(root, bg="#ffffff", padx=20, pady=20)
         card.place(relx=0.5, rely=0.5, anchor="center")
 
-        self.back_button = ttk.Button(card, text="⬅ Powrót", command=self.return_to_mode_selector)
+        self.back_button = ttk.Button(card, text="Powrót", command=self.return_to_mode_selector)
         self.back_button.pack(fill="x", pady=(0, 10))
 
         tk.Label(
@@ -55,7 +55,7 @@ class ResizeExistingWindow:
 
         ttk.Button(
             card,
-            text="▶ Rozpocznij skalowanie",
+            text="Rozpocznij skalowanie",
             command=self.start_resize
         ).pack(fill="x")
 

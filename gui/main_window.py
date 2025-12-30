@@ -81,7 +81,7 @@ class ImageDownloaderGUI:
 
     def __init__(self, master):
         self.master = master
-        master.title("INŻYNIERKA")
+        master.title("PRACA INŻYNIERSKA")
 
         # =========================
         #   WYGLĄD / STAŁY ROZMIAR
@@ -231,7 +231,7 @@ class ImageDownloaderGUI:
         top = tk.Frame(f, bg=self.C_BG)
         top.pack(fill="x", padx=12, pady=(12, 6))
 
-        self.back_button =  ttk.Button(top, text="⬅ Powrót", command=self.return_to_mode_selector)
+        self.back_button =  ttk.Button(top, text="Powrót", command=self.return_to_mode_selector)
         self.back_button.pack(fill="x", pady=10)
 
         # ----------------------------
@@ -513,7 +513,7 @@ class ImageDownloaderGUI:
         self.download_button = ttk.Button(c, text="Pobierz obrazy", command=self.start_download)
         self.download_button.pack(fill="x", pady=(0, 8))
 
-        self.stop_button = ttk.Button(c, text="⛔ Przerwij pobieranie", command=self.request_stop_download)
+        self.stop_button = ttk.Button(c, text="Przerwij pobieranie", command=self.request_stop_download)
         self.stop_button.pack(fill="x")
 
         # mały odstęp na koniec, żeby dało się ładnie doscrollować
@@ -878,11 +878,7 @@ class ImageDownloaderGUI:
         return result
 
     def infer_target_output_format(self):
-        """
-        Zwraca docelowy format do konwersji przy problemie formatu.
-        Opcja C: bierzemy z allowed_formats, jeśli istnieje,
-        w przeciwnym razie domyślnie 'jpg'.
-        """
+
         allowed = self.get_allowed_input_formats()
         if allowed:
             first = allowed[0].lower()
@@ -964,6 +960,7 @@ class ImageDownloaderGUI:
             if self.gui_alive:
                 self.master.after(0, lambda: self.progress_bar.config(value=0))
                 self.download_button.config(state="normal")
+                self.back_button.config(state="normal")
                 self.download_in_progress = False
 
             print("[STOP] Użytkownik zażądał przerwania pobierania.")
@@ -1814,3 +1811,4 @@ class ImageDownloaderGUI:
         if self.gui_alive:
             self.master.after(0, lambda: messagebox.showinfo("Zakończono", f"Dane zapisano w: {save_dir}"))
         self.download_button.config(state="normal")
+        self.back_button.config(state="normal")
